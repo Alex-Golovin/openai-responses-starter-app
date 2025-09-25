@@ -23,15 +23,15 @@ export default function Main() {
   }, [router, resetConversation]);
 
   return (
-    <div className="flex justify-center h-screen">
-      <div className="w-full md:w-[70%]">
+    <div className="relative flex h-full min-h-0 w-full justify-center gap-4 p-4">
+      <div className="flex h-full min-h-0 w-full max-w-4xl">
         <Assistant />
       </div>
-      <div className=" hidden md:block w-[30%]">
+      <div className="hidden h-full min-h-0 w-[28rem] md:block">
         <ToolsPanel />
       </div>
       {/* Hamburger menu for small screens */}
-      <div className="absolute top-4 right-4 md:hidden">
+      <div className="absolute right-4 top-4 md:hidden">
         <button onClick={() => setIsToolsPanelOpen(true)}>
           <Menu size={24} />
         </button>

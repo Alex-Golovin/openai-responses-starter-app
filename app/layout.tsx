@@ -1,3 +1,4 @@
+import NavigationMenu from "@/components/navigation-menu";
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
@@ -31,8 +32,11 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <div className="flex h-screen bg-gray-200 w-full flex-col  text-stone-900">
-          <main>{children}</main>
+        <div className="flex min-h-screen w-full flex-col bg-gray-200 text-stone-900 md:flex-row">
+          <NavigationMenu />
+          <div className="flex flex-1 flex-col">
+            <main className="flex-1 overflow-hidden">{children}</main>
+          </div>
         </div>
       </body>
     </html>
