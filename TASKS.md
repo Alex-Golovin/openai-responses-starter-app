@@ -143,8 +143,9 @@ Chat UI
 
 	•	Источник правды: MongoDB (Topics, Document Templates, Fields, Checks). У Vector Store хранится только текстовая база знаний (FAQ, чек-листы, правила/пояснения, анти-патерни) с metadata: { topicId, kind, title }.
 	•	Стратегия на MVP:
-		– Ручной режим «Reindex» в /admin: полный пересбор knowledge.jsonl из Mongo и загрузка в выбранный Vector Store (перезапись).
-		– Чанкер: 300–800 токенов; без лишнего шума; українською. Метаданные каждого чанка: { topicId, kind: 'faq'|'checklist'|'rule'|'pattern', title }.
+		– Працюємо з одним Vector Store (`vs_68d58c14130081919fa83aeee14f6a7d`); id зберігаємо в конфігурації (env/константа).
+		– Перебудова knowledge: `buildChunksFromMongo` формує чанки та одразу аплоудить їх у Vector Store через `POST /api/knowledge/reindex` (без проміжного knowledge.jsonl).
+		– Чанкер: 300–800 токенів; без зайвого шуму; українською. Метадані кожного чанка: { topicId, kind: 'faq'|'checklist'|'rule'|'pattern', title }.
 	•	Генерация чанков (buildChunksFromTopic):
 		– FAQ: на каждую пару q/a → отдельный чанк kind:'faq'
 		– Документы: из topic.documents собрать текстовый чек-лист → kind:'checklist'
@@ -236,19 +237,18 @@ Chat UI
 	•	[x] Підключити локальну MongoDB і виставити MONGODB_URI
 	•	[x] Перевірити локальний запуск стартера та File Search панель
 
-Етап 1. База знань та адмін-дані
-	•	[ ] Зібрати knowledge.jsonl (10–20 чанків: FAQ, чек-листи, правила, анти-патерни)
-	•	[ ] Завантажити чанки у Vector Store через UI стартера або скрипт
-	•	[ ] Перевірити пошук по кількох запитах — приходять релевантні цитати
-	•	[ ] buildChunksFromMongo: серверний білдер knowledge з Topics/Checks
-	•	[ ] /api/knowledge/reindex — повний перебілд з Mongo
-	•	[ ] /api/knowledge/upsert-topic/:id — точкове оновлення теми
-	•	[ ] /admin: кнопки «Reindex» і «Оновити тему»
+Етап 1. База знань та векторне сховище
+	•	[ ] Додати конфіг для Vector Store (`VECTOR_STORE_ID=vs_68d58c14130081919fa83aeee14f6a7d`) і прокинути id у File Search/рантайм
+	•	[ ] Реалізувати `buildChunksFromMongo`: формуємо FAQ/чек-листи/правила/антипатерни з Mongo
+	•	[ ] Реалізувати `POST /api/knowledge/reindex` — повний апдейт Vector Store з Mongo
+	•	[ ] Реалізувати `POST /api/knowledge/upsert-topic/:id` — апдейт однієї теми
+	•	[ ] Ручна перевірка: додати тестові записи в Mongo (через Compass/скрипт) і переконатися, що File Search повертає цитати після reindex
 
 Етап 2. Моделі MongoDB та адмін-UI
 	•	[ ] Додати моделі Field, DocumentTemplate, Check, Topic (схеми вище)
 	•	[ ] CRUD route handlers /api/admin/... для кожної сутності
 	•	[ ] /admin: одна сторінка з секціями (Topics, Document Templates, Fields, Checks)
+	•	[ ] /admin: кнопки «Reindex» і «Оновити тему» бʼють по `/api/knowledge/*` (без ручних файлів)
 	•	[ ] Ручна перевірка: створити тестову тему і переконатися, що вона зберігається та підтягується у білдері знань
 
 Етап 3. Runtime API для агента
