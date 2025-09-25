@@ -1,3 +1,4 @@
+import { defaultVectorStore } from "@/config/constants";
 import { toolsList } from "../../config/tools-list";
 import { ToolsState, WebSearchConfig } from "@/stores/useToolsStore";
 import { getFreshAccessToken } from "@/lib/connectors-auth";
@@ -39,11 +40,15 @@ export const getTools = async (toolsState: ToolsState) => {
   }
 
   if (fileSearchEnabled) {
-    const fileSearchTool = {
-      type: "file_search",
-      vector_store_ids: [vectorStore?.id],
-    };
-    tools.push(fileSearchTool);
+    const activeVectorStoreId = vectorStore?.id ?? defaultVectorStore.id;
+
+    if (activeVectorStoreId) {
+      const fileSearchTool = {
+        type: "file_search" as const,
+        vector_store_ids: [activeVectorStoreId],
+      };
+      tools.push(fileSearchTool);
+    }
   }
 
   if (codeInterpreterEnabled) {

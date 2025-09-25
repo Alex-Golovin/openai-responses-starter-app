@@ -31,7 +31,10 @@ export const INITIAL_MESSAGE = `
 Hi, how can I help you?
 `;
 
+export const VECTOR_STORE_ID =
+  process.env.NEXT_PUBLIC_VECTOR_STORE_ID ?? process.env.VECTOR_STORE_ID ?? "";
+
 export const defaultVectorStore = {
-  id: "",
-  name: "Example",
+  id: VECTOR_STORE_ID,
+  name: "Configured Vector Store",
 };

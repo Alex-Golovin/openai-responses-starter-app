@@ -238,7 +238,7 @@ Chat UI
 	•	[x] Перевірити локальний запуск стартера та File Search панель
 
 Етап 1. База знань та векторне сховище
-	•	[ ] Додати конфіг для Vector Store (`VECTOR_STORE_ID=vs_68d58c14130081919fa83aeee14f6a7d`) і прокинути id у File Search/рантайм
+	•	[x] Додати конфіг для Vector Store (`VECTOR_STORE_ID=vs_68d58c14130081919fa83aeee14f6a7d`) і прокинути id у File Search/рантайм
 	•	[ ] Реалізувати `buildChunksFromMongo`: формуємо FAQ/чек-листи/правила/антипатерни з Mongo
 	•	[ ] Реалізувати `POST /api/knowledge/reindex` — повний апдейт Vector Store з Mongo
 	•	[ ] Реалізувати `POST /api/knowledge/upsert-topic/:id` — апдейт однієї теми
