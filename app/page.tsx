@@ -1,13 +1,10 @@
 "use client";
 import Assistant from "@/components/assistant";
-import ToolsPanel from "@/components/tools-panel";
-import { Menu, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import useConversationStore from "@/stores/useConversationStore";
 
 export default function Main() {
-  const [isToolsPanelOpen, setIsToolsPanelOpen] = useState(false);
   const router = useRouter();
   const { resetConversation } = useConversationStore();
 
@@ -23,30 +20,10 @@ export default function Main() {
   }, [router, resetConversation]);
 
   return (
-    <div className="relative flex h-full min-h-0 w-full justify-center gap-4 p-4">
-      <div className="flex h-full min-h-0 w-full max-w-4xl">
+    <div className="relative flex h-full flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 overflow-hidden">
         <Assistant />
       </div>
-      <div className="hidden h-full min-h-0 w-[28rem] md:block">
-        <ToolsPanel />
-      </div>
-      {/* Hamburger menu for small screens */}
-      <div className="absolute right-4 top-4 md:hidden">
-        <button onClick={() => setIsToolsPanelOpen(true)}>
-          <Menu size={24} />
-        </button>
-      </div>
-      {/* Overlay panel for ToolsPanel on small screens */}
-      {isToolsPanelOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black bg-opacity-30">
-          <div className="w-full bg-white h-full p-4">
-            <button className="mb-4" onClick={() => setIsToolsPanelOpen(false)}>
-              <X size={24} />
-            </button>
-            <ToolsPanel />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

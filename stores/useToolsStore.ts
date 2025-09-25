@@ -44,12 +44,10 @@ export interface ToolsState {
 
 interface StoreState {
   fileSearchEnabled: boolean;
-  //previousFileSearchEnabled: boolean;
-  setFileSearchEnabled: (enabled: boolean) => void;
+  setFileSearchEnabled: (enabled?: boolean) => void;
   webSearchEnabled: boolean;
   setWebSearchEnabled: (enabled: boolean) => void;
   functionsEnabled: boolean;
-  //previousFunctionsEnabled: boolean;
   setFunctionsEnabled: (enabled: boolean) => void;
   googleIntegrationEnabled: boolean;
   setGoogleIntegrationEnabled: (enabled: boolean) => void;
@@ -67,7 +65,7 @@ interface StoreState {
 
 const useToolsStore = create<StoreState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       vectorStore: defaultVectorStore.id !== "" ? defaultVectorStore : null,
       webSearchConfig: {
         user_location: {
@@ -83,17 +81,15 @@ const useToolsStore = create<StoreState>()(
         allowed_tools: "",
         skip_approval: true,
       },
-      fileSearchEnabled: false,
-      previousFileSearchEnabled: false,
-      setFileSearchEnabled: (enabled) => {
-        set({ fileSearchEnabled: enabled });
+      fileSearchEnabled: true,
+      setFileSearchEnabled: () => {
+        set({ fileSearchEnabled: true });
       },
       webSearchEnabled: false,
       setWebSearchEnabled: (enabled) => {
         set({ webSearchEnabled: enabled });
       },
-      functionsEnabled: true,
-      previousFunctionsEnabled: true,
+      functionsEnabled: false,
       setFunctionsEnabled: (enabled) => {
         set({ functionsEnabled: enabled });
       },
@@ -115,6 +111,19 @@ const useToolsStore = create<StoreState>()(
     }),
     {
       name: "tools-store",
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState as Partial<StoreState>) ?? {};
+        const merged = { ...currentState, ...persisted } as StoreState;
+
+        if (!merged.vectorStore?.id && defaultVectorStore.id) {
+          merged.vectorStore = defaultVectorStore;
+        }
+
+        merged.fileSearchEnabled = true;
+        merged.functionsEnabled = false;
+
+        return merged;
+      },
     }
   )
 );

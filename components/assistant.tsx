@@ -49,7 +49,7 @@ export default function Assistant() {
   };
 
   return (
-    <div className="h-full p-4 w-full bg-white">
+    <div className="h-full w-full bg-white">
       <Chat
         items={chatMessages}
         onSendMessage={handleSendMessage}

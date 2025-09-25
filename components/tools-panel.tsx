@@ -1,87 +1,55 @@
 "use client";
-import React from "react";
-import FileSearchSetup from "./file-search-setup";
-import WebSearchConfig from "./websearch-config";
-import FunctionsView from "./functions-view";
-import McpConfig from "./mcp-config";
-import PanelConfig from "./panel-config";
+import { useEffect } from "react";
+import { defaultVectorStore } from "@/config/constants";
 import useToolsStore from "@/stores/useToolsStore";
-import GoogleIntegrationPanel from "@/components/google-integration";
 
-export default function ContextPanel() {
-  const {
-    fileSearchEnabled,
-    setFileSearchEnabled,
-    webSearchEnabled,
-    setWebSearchEnabled,
-    functionsEnabled,
-    setFunctionsEnabled,
-    googleIntegrationEnabled,
-    setGoogleIntegrationEnabled,
-    mcpEnabled,
-    setMcpEnabled,
-    codeInterpreterEnabled,
-    setCodeInterpreterEnabled,
-  } = useToolsStore();
-  const [oauthConfigured, setOauthConfigured] = React.useState<boolean>(false);
+export default function ToolsPanel() {
+  const vectorStore = useToolsStore((state) => state.vectorStore);
+  const setFileSearchEnabled = useToolsStore((state) => state.setFileSearchEnabled);
+  const setFunctionsEnabled = useToolsStore((state) => state.setFunctionsEnabled);
+  const setVectorStore = useToolsStore((state) => state.setVectorStore);
 
-  React.useEffect(() => {
-    fetch("/api/google/status")
-      .then((r) => r.json())
-      .then((d) => setOauthConfigured(Boolean(d.oauthConfigured)))
-      .catch(() => setOauthConfigured(false));
-  }, []);
+  useEffect(() => {
+    setFileSearchEnabled(true);
+    setFunctionsEnabled(false);
+    if (defaultVectorStore.id) {
+      setVectorStore(defaultVectorStore);
+    }
+  }, [setFileSearchEnabled, setFunctionsEnabled, setVectorStore]);
+
   return (
-    <div className="h-full p-8 w-full bg-[#f9f9f9] rounded-t-xl md:rounded-none border-l-1 border-stone-100">
-      <div className="flex flex-col overflow-y-scroll h-full">
-        <PanelConfig
-          title="File Search"
-          tooltip="Allows to search a knowledge base (vector store)"
-          enabled={fileSearchEnabled}
-          setEnabled={setFileSearchEnabled}
-        >
-          <FileSearchSetup />
-        </PanelConfig>
-        {/* <PanelConfig
-          title="Web Search"
-          tooltip="Allows to search the web"
-          enabled={webSearchEnabled}
-          setEnabled={setWebSearchEnabled}
-        >
-          <WebSearchConfig />
-        </PanelConfig> */}
-        {/* <PanelConfig
-          title="Code Interpreter"
-          tooltip="Allows the assistant to run Python code"
-          enabled={codeInterpreterEnabled}
-          setEnabled={setCodeInterpreterEnabled}
-        /> */}
-        <PanelConfig
-          title="Functions"
-          tooltip="Allows to use locally defined functions"
-          enabled={functionsEnabled}
-          setEnabled={setFunctionsEnabled}
-        >
-          <FunctionsView />
-        </PanelConfig>
-        {/* <PanelConfig
-          title="MCP"
-          tooltip="Allows to call tools via remote MCP server"
-          enabled={mcpEnabled}
-          setEnabled={setMcpEnabled}
-        >
-          <McpConfig />
-        </PanelConfig> */}
-        {/* <PanelConfig
-          title="Google Integration"
-          tooltip="Connect your Google account to enable Gmail and Calendar features."
-          enabled={oauthConfigured && googleIntegrationEnabled}
-          setEnabled={setGoogleIntegrationEnabled}
-          disabled={!oauthConfigured}
-        >
-          <GoogleIntegrationPanel />
-        </PanelConfig> */}
+    <aside className="flex h-full w-full flex-col gap-6 overflow-y-auto bg-white p-6 text-sm text-stone-700">
+      <div>
+        <h2 className="text-base font-semibold text-stone-900">Пісочниця</h2>
+        <p className="mt-2">
+          Цей інтерфейс використовує чат як внутрішній стенд для тестування адмін-даних та
+          відповідей агента.
+        </p>
       </div>
-    </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-stone-900">File Search</h3>
+        <p className="mt-1">
+          Пошук по векторному сховищу активовано за замовчуванням і вимкнути його в UI неможливо.
+        </p>
+        {vectorStore?.id ? (
+          <p className="mt-2 font-mono text-xs text-stone-500">
+            vector_store_id: {vectorStore.id}
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-amber-600">
+            Vector Store ще не налаштований. Додайте ідентифікатор у конфіг, щоб увімкнути RAG.
+          </p>
+        )}
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-stone-900">Локальні інструменти</h3>
+        <p className="mt-1">
+          Інтеграції parse_files, run_checks тощо вмикаються в коді. У цьому UI перемикачі не
+          передбачені.
+        </p>
+      </div>
+    </aside>
   );
 }
