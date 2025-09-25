@@ -1,12 +1,3 @@
-берём openai/openai-responses-starter-app за основу, добавляем MongoDB для админ-данных (topics, documents, fields, checks), подключаем File Search (векторное хранилище) из стартера, и дописываем свои server-side инструменты (parse_files, run_checks, render_response, book_consultation). Сессии и сообщения храним у OpenAI (стартер уже умеет multi-turn), у себя — только админ-модельки. Ниже — обновлённое ТЗ и пошаговый чеклист.
-
-Примечания по платформе:
-• Стартер — Next.js чат поверх Responses API с уже встроенным File Search (векторка) и веб-поиском.  ￼
-• File Search работает поверх Vector Store; в API можно передавать массив vector_store_ids (UI старта по умолчанию держит один, но кодом можно расширить; в сообществе отмечают ограничение на кол-во — иногда 1–2 стора).  ￼
-• Agents SDK — JS/TS библиотека для оркестрации агентов и тулов; можно встраивать в Next.js (route handlers/server actions).  ￼
-
-⸻
-
 ТЗ: MVP «Нотаріальний AI-помічник» на базе openai-responses-starter-app
 
 Цель
