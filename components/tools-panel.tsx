@@ -42,20 +42,20 @@ export default function ContextPanel() {
         >
           <FileSearchSetup />
         </PanelConfig>
-        <PanelConfig
+        {/* <PanelConfig
           title="Web Search"
           tooltip="Allows to search the web"
           enabled={webSearchEnabled}
           setEnabled={setWebSearchEnabled}
         >
           <WebSearchConfig />
-        </PanelConfig>
-        <PanelConfig
+        </PanelConfig> */}
+        {/* <PanelConfig
           title="Code Interpreter"
           tooltip="Allows the assistant to run Python code"
           enabled={codeInterpreterEnabled}
           setEnabled={setCodeInterpreterEnabled}
-        />
+        /> */}
         <PanelConfig
           title="Functions"
           tooltip="Allows to use locally defined functions"
@@ -64,15 +64,15 @@ export default function ContextPanel() {
         >
           <FunctionsView />
         </PanelConfig>
-        <PanelConfig
+        {/* <PanelConfig
           title="MCP"
           tooltip="Allows to call tools via remote MCP server"
           enabled={mcpEnabled}
           setEnabled={setMcpEnabled}
         >
           <McpConfig />
-        </PanelConfig>
-        <PanelConfig
+        </PanelConfig> */}
+        {/* <PanelConfig
           title="Google Integration"
           tooltip="Connect your Google account to enable Gmail and Calendar features."
           enabled={oauthConfigured && googleIntegrationEnabled}
@@ -80,7 +80,7 @@ export default function ContextPanel() {
           disabled={!oauthConfigured}
         >
           <GoogleIntegrationPanel />
-        </PanelConfig>
+        </PanelConfig> */}
       </div>
     </div>
   );
