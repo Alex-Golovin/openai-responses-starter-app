@@ -8,16 +8,7 @@ type Feedback = {
   message: string;
 };
 
-type FieldValidatorType =
-  | 'regex'
-  | 'min_length'
-  | 'forbid_patterns'
-  | 'date_before';
-
-type FieldValidatorRecord = {
-  type: FieldValidatorType;
-  value: unknown;
-};
+// Field validators removed — all rules are handled within Checks
 
 type FieldOptionRecord = {
   label: string;
@@ -31,7 +22,6 @@ type FieldRecord = {
   type: 'string' | 'number' | 'boolean' | 'date' | 'enum';
   options?: FieldOptionRecord[];
   extractHint?: string;
-  validators?: FieldValidatorRecord[];
 };
 
 type TemplateCheckMode = 'single_doc' | 'multi_doc';
@@ -159,12 +149,7 @@ const CHECK_SEVERITY_LABELS: Record<CheckRecord['severity'], string> = {
   high: 'Висока',
 };
 
-const FIELD_VALIDATOR_OPTIONS: { value: FieldValidatorType; label: string }[] = [
-  { value: 'regex', label: 'Відповідає регулярному виразу' },
-  { value: 'min_length', label: 'Мінімальна кількість символів' },
-  { value: 'forbid_patterns', label: 'Заборонені фрази/патерни' },
-  { value: 'date_before', label: 'Дата має бути до' },
-];
+// Field validator options removed
 
 type FieldFormState = {
   key: string;
@@ -172,7 +157,6 @@ type FieldFormState = {
   type: FieldRecord['type'];
   options: FieldOptionForm[];
   extractHint: string;
-  validators: FieldValidatorForm[];
 };
 
 type TemplateFormState = {
@@ -201,11 +185,7 @@ type FieldOptionForm = {
   isEditable: boolean;
 };
 
-type FieldValidatorForm = {
-  id: string;
-  type: FieldValidatorType;
-  value: string;
-};
+// FieldValidatorForm removed
 
 type TopicResponseBlockDraft = {
   kind: TopicResponseBlock['kind'];
@@ -232,7 +212,6 @@ const createEmptyFieldForm = (): FieldFormState => ({
   type: 'string',
   options: [],
   extractHint: '',
-  validators: [],
 });
 
 const createEmptyTemplateForm = (): TemplateFormState => ({
@@ -464,7 +443,6 @@ export default function AdminPage() {
               : option
           )
         : undefined,
-      validators: field.validators?.map((validator) => ({ ...validator })),
     }));
     setFields(normalized);
   };
@@ -633,20 +611,7 @@ export default function AdminPage() {
     }
   };
 
-  const formatValidatorValueForInput = (
-    validator: FieldValidatorRecord
-  ): string => {
-    if (validator.value === undefined || validator.value === null) {
-      return '';
-    }
-    if (Array.isArray(validator.value)) {
-      return validator.value.join('\n');
-    }
-    if (typeof validator.value === 'number') {
-      return String(validator.value);
-    }
-    return String(validator.value);
-  };
+  // Validators removed
 
   const handleFieldSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -708,57 +673,12 @@ export default function AdminPage() {
       optionsPayload = prepared.map(({ label, value }) => ({ label, value }));
     }
 
-    const validatorsPayload: FieldValidatorRecord[] = [];
-    for (let index = 0; index < fieldForm.validators.length; index += 1) {
-      const validator = fieldForm.validators[index];
-      const trimmedValue = validator.value.trim();
-
-      if (!trimmedValue) {
-        showError(`Вкажіть значення для валідації №${index + 1}`);
-        return;
-      }
-
-      switch (validator.type) {
-        case 'regex':
-          validatorsPayload.push({ type: validator.type, value: trimmedValue });
-          break;
-        case 'min_length': {
-          const parsed = Number(trimmedValue);
-          if (!Number.isFinite(parsed) || parsed < 0) {
-            showError(`Мінімальна довжина у валідації №${index + 1} має бути невід'ємним числом`);
-            return;
-          }
-          validatorsPayload.push({ type: validator.type, value: parsed });
-          break;
-        }
-        case 'forbid_patterns': {
-          const patterns = trimmedValue
-            .split('\n')
-            .map((item) => item.trim())
-            .filter((item) => item.length > 0);
-          if (patterns.length === 0) {
-            showError(`Додайте хоча б один заборонений патерн у валідації №${index + 1}`);
-            return;
-          }
-          validatorsPayload.push({ type: validator.type, value: patterns });
-          break;
-        }
-        case 'date_before':
-          validatorsPayload.push({ type: validator.type, value: trimmedValue });
-          break;
-        default:
-          showError(`Невідомий тип валідації у правилі №${index + 1}`);
-          return;
-      }
-    }
-
     const payload = {
       key: fieldForm.key.trim(),
       label: fieldForm.label.trim(),
       type: fieldForm.type,
       options: optionsPayload,
       extractHint: fieldForm.extractHint.trim() || undefined,
-      validators: validatorsPayload.length > 0 ? validatorsPayload : undefined,
     };
 
     setFieldSubmitting(true);
@@ -803,11 +723,6 @@ export default function AdminPage() {
         isEditable: false,
       })),
       extractHint: field.extractHint || '',
-      validators: (field.validators || []).map((validator, index) => ({
-        id: `${field.id}-validator-${index}`,
-        type: validator.type,
-        value: formatValidatorValueForInput(validator),
-      })),
     });
   };
 
@@ -873,55 +788,13 @@ export default function AdminPage() {
     }));
   };
 
-  const addFieldValidator = () => {
-    setFieldForm((prev) => ({
-      ...prev,
-      validators: [
-        ...prev.validators,
-        {
-          id: generateRuleId(),
-          type: 'regex',
-          value: '',
-        },
-      ],
-    }));
-  };
+  // Validators removed
 
-  const updateFieldValidatorType = (index: number, type: FieldValidatorType) => {
-    setFieldForm((prev) => ({
-      ...prev,
-      validators: prev.validators.map((validator, idx) =>
-        idx === index
-          ? {
-              ...validator,
-              type,
-              value: '',
-            }
-          : validator
-      ),
-    }));
-  };
+  // Validators removed
 
-  const updateFieldValidatorValue = (index: number, value: string) => {
-    setFieldForm((prev) => ({
-      ...prev,
-      validators: prev.validators.map((validator, idx) =>
-        idx === index
-          ? {
-              ...validator,
-              value,
-            }
-          : validator
-      ),
-    }));
-  };
+  // Validators removed
 
-  const removeFieldValidator = (index: number) => {
-    setFieldForm((prev) => ({
-      ...prev,
-      validators: prev.validators.filter((_, idx) => idx !== index),
-    }));
-  };
+  // Validators removed
 
   const toggleTemplateField = (fieldId: string) => {
     setTemplateForm((prev) => {
@@ -1601,7 +1474,7 @@ export default function AdminPage() {
                 <th className="px-3 py-2 text-left font-medium text-gray-700">Ключ</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700">Назва</th>
                 <th className="px-3 py-2 text-left font-medium text-gray-700">Тип</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-700">Валідації</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Підказка</th>
                 <th className="px-3 py-2 text-right font-medium text-gray-700">Дії</th>
               </tr>
             </thead>
@@ -1611,10 +1484,8 @@ export default function AdminPage() {
                   <td className="px-3 py-2 font-mono text-xs">{field.key}</td>
                   <td className="px-3 py-2">{field.label}</td>
                   <td className="px-3 py-2">{FIELD_TYPE_LABELS[field.type]}</td>
-                  <td className="px-3 py-2 text-xs text-gray-500">
-                    {field.validators && field.validators.length > 0
-                      ? `${field.validators.length} правил`
-                      : '—'}
+                  <td className="px-3 py-2 text-xs text-gray-500 max-w-[320px] truncate" title={field.extractHint || ''}>
+                    {field.extractHint ? field.extractHint : '—'}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex justify-end gap-2">
@@ -1764,124 +1635,7 @@ export default function AdminPage() {
               </div>
             </div>
           )}
-          <div className="space-y-2 md:col-span-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium">Валідації</label>
-                <div className="text-[11px] text-muted-foreground">
-                  Валідації — це прості обмеження значень поля (без бізнес-логіки).
-                  Використовуйте їх для формату/міндовжини/заборонених фраз тощо.
-                  Логіку сценарію оформлюйте у «Перевірках».
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={addFieldValidator}
-                className="text-xs text-blue-600 hover:underline"
-              >
-                Додати правило
-              </button>
-            </div>
-            {fieldForm.validators.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                Додайте правила валідації, якщо потрібно обмежити значення поля.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {fieldForm.validators.map((validator, index) => (
-                  <div
-                    key={validator.id}
-                    className="space-y-2 rounded-md border px-3 py-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 space-y-2">
-                        <div className="grid gap-2 md:grid-cols-2">
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium">Тип</label>
-                            <select
-                              value={validator.type}
-                              onChange={(event) =>
-                                updateFieldValidatorType(
-                                  index,
-                                  event.target.value as FieldValidatorType
-                                )
-                              }
-                              className="w-full rounded-md border px-3 py-2 text-sm"
-                            >
-                              {FIELD_VALIDATOR_OPTIONS.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium">Значення</label>
-                            {validator.type === 'min_length' ? (
-                              <input
-                                type="number"
-                                min={0}
-                                value={validator.value}
-                                onChange={(event) =>
-                                  updateFieldValidatorValue(index, event.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                                placeholder="Наприклад, 3"
-                              />
-                            ) : validator.type === 'forbid_patterns' ? (
-                              <textarea
-                                value={validator.value}
-                                onChange={(event) =>
-                                  updateFieldValidatorValue(index, event.target.value)
-                                }
-                                className="h-24 w-full rounded-md border px-3 py-2 text-sm"
-                                placeholder={'Фраза 1\nФраза 2'}
-                              />
-                            ) : validator.type === 'date_before' ? (
-                              <input
-                                type="date"
-                                value={validator.value}
-                                onChange={(event) =>
-                                  updateFieldValidatorValue(index, event.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                              />
-                            ) : (
-                              <input
-                                value={validator.value}
-                                onChange={(event) =>
-                                  updateFieldValidatorValue(index, event.target.value)
-                                }
-                                className="w-full rounded-md border px-3 py-2 text-sm"
-                                placeholder="Наприклад, ^[A-Z0-9]+$"
-                              />
-                            )}
-                          </div>
-                        </div>
-                        {validator.type === 'regex' && (
-                          <p className="text-[11px] text-muted-foreground">
-                            Використовуйте синтаксис JavaScript RegExp.
-                          </p>
-                        )}
-                        {validator.type === 'forbid_patterns' && (
-                          <p className="text-[11px] text-muted-foreground">
-                            Кожен рядок буде розцінений як окремий заборонений патерн.
-                          </p>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeFieldValidator(index)}
-                        className="text-xs text-red-600 hover:underline"
-                      >
-                        Видалити
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* Validators section removed */}
           <div className="md:col-span-2">
             <button
               type="submit"
