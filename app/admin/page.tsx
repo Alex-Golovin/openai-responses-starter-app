@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 type Feedback = {
@@ -338,7 +338,7 @@ async function fetchJson<T>(input: RequestInfo, init?: RequestInit) {
   return (await response.json()) as T;
 }
 
-export default function AdminPage() {
+function AdminPageContent() {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   const [fields, setFields] = useState<FieldRecord[]>([]);
@@ -2925,5 +2925,13 @@ export default function AdminPage() {
         )}
       </section>
     </div>
+  );
+}
+
+export default function AdminPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminPageContent />
+    </Suspense>
   );
 }

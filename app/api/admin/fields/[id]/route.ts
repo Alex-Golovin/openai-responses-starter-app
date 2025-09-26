@@ -4,15 +4,23 @@ import { connectToDatabase } from '@/lib/mongoose';
 import { Field } from '@/models/Field';
 import { serializeDocument } from '@/app/api/admin/utils';
 
-interface RouteParams {
-  params: { id: string };
-}
+type RouteContext = {
+  params: Promise<{ id: string | string[] | undefined }>;
+};
 
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     await connectToDatabase();
     const payload = await request.json();
-    const field = await Field.findByIdAndUpdate(params.id, payload, {
+    const params = await context.params;
+    const idParam = params?.id;
+    const id = Array.isArray(idParam) ? idParam[0] : idParam;
+
+    if (!id) {
+      return NextResponse.json({ error: 'Field id is required' }, { status: 400 });
+    }
+
+    const field = await Field.findByIdAndUpdate(id, payload, {
       new: true,
       runValidators: true,
     });
@@ -31,10 +39,18 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+export async function DELETE(_request: NextRequest, context: RouteContext) {
   try {
     await connectToDatabase();
-    const field = await Field.findByIdAndDelete(params.id);
+    const params = await context.params;
+    const idParam = params?.id;
+    const id = Array.isArray(idParam) ? idParam[0] : idParam;
+
+    if (!id) {
+      return NextResponse.json({ error: 'Field id is required' }, { status: 400 });
+    }
+
+    const field = await Field.findByIdAndDelete(id);
     if (!field) {
       return NextResponse.json({ error: 'Field not found' }, { status: 404 });
     }

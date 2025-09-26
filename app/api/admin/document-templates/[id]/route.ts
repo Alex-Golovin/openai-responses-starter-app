@@ -4,14 +4,24 @@ import { connectToDatabase } from '@/lib/mongoose';
 import { DocumentTemplate } from '@/models/DocumentTemplate';
 import { serializeDocument } from '@/app/api/admin/utils';
 
-interface RouteParams {
-  params: { id: string };
-}
+type RouteContext = {
+  params: Promise<{ id: string | string[] | undefined }>;
+};
 
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export async function PUT(request: NextRequest, context: RouteContext) {
   try {
     await connectToDatabase();
     const payload = await request.json();
+    const params = await context.params;
+    const idParam = params?.id;
+    const id = Array.isArray(idParam) ? idParam[0] : idParam;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Document template id is required' },
+        { status: 400 }
+      );
+    }
     const fieldIds = Array.isArray(payload.fieldIds) ? payload.fieldIds : [];
     const checks = Array.isArray(payload.checks)
       ? payload.checks
@@ -32,7 +42,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           .filter(Boolean)
       : [];
     const template = await DocumentTemplate.findByIdAndUpdate(
-      params.id,
+      id,
       {
         name: payload.name,
         fieldIds,
@@ -61,10 +71,21 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+export async function DELETE(_request: NextRequest, context: RouteContext) {
   try {
     await connectToDatabase();
-    const template = await DocumentTemplate.findByIdAndDelete(params.id);
+    const params = await context.params;
+    const idParam = params?.id;
+    const id = Array.isArray(idParam) ? idParam[0] : idParam;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Document template id is required' },
+        { status: 400 }
+      );
+    }
+
+    const template = await DocumentTemplate.findByIdAndDelete(id);
     if (!template) {
       return NextResponse.json(
         { error: 'Document template not found' },

@@ -174,10 +174,15 @@ export const buildChunksFromMongo = async (
     Field.find().lean(),
   ]);
 
-  const typedTopics = (topics as (TopicDocument & { _id: Types.ObjectId })[]) || [];
-  const typedTemplates =
-    (templates as (DocumentTemplateDocument & { _id: Types.ObjectId })[]) || [];
-  const typedFields = (fields as (FieldDocument & { _id: Types.ObjectId })[]) || [];
+  const typedTopics = Array.isArray(topics)
+    ? (topics as unknown as (TopicDocument & { _id: Types.ObjectId })[])
+    : [];
+  const typedTemplates = Array.isArray(templates)
+    ? (templates as unknown as (DocumentTemplateDocument & { _id: Types.ObjectId })[])
+    : [];
+  const typedFields = Array.isArray(fields)
+    ? (fields as unknown as (FieldDocument & { _id: Types.ObjectId })[])
+    : [];
 
   const templatesMap = new Map(
     typedTemplates.map((template) => [template._id.toString(), template])

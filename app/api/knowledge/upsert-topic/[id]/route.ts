@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { upsertTopicKnowledge } from '@/lib/knowledge/vectorStore';
 
-interface RouteParams {
-  params: { id: string };
-}
+type RouteContext = {
+  params: Promise<{ id: string | string[] | undefined }>;
+};
 
-export async function POST(_request: NextRequest, { params }: RouteParams) {
+export async function POST(_request: NextRequest, context: RouteContext) {
   try {
-    const { id } = params;
+    const params = await context.params;
+    const idParam = params?.id;
+    const id = Array.isArray(idParam) ? idParam[0] : idParam;
     if (!id) {
       return NextResponse.json(
         { error: 'Topic id is required' },

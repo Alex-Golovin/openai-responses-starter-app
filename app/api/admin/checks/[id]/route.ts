@@ -5,13 +5,25 @@ import { Check } from '@/models/Check';
 import { DocumentTemplate } from '@/models/DocumentTemplate';
 import { serializeDocument } from '@/app/api/admin/utils';
 
+type RouteContext = {
+  params: Promise<{ id: string | string[] | undefined }>;
+};
+
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: RouteContext
 ) {
   try {
     await connectToDatabase();
     const payload = await request.json();
+
+    const params = await context.params;
+    const idParam = params?.id;
+    const id = Array.isArray(idParam) ? idParam[0] : idParam;
+
+    if (!id) {
+      return NextResponse.json({ error: 'Check id is required' }, { status: 400 });
+    }
 
     const update = {
       description: payload.description,
@@ -21,7 +33,7 @@ export async function PUT(
       onFail: payload.onFail,
     };
 
-    const check = await Check.findByIdAndUpdate(params.id, update, {
+    const check = await Check.findByIdAndUpdate(id, update, {
       new: true,
       runValidators: true,
     });
@@ -42,18 +54,26 @@ export async function PUT(
 
 export async function DELETE(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  context: RouteContext
 ) {
   try {
     await connectToDatabase();
-    const check = await Check.findByIdAndDelete(params.id);
+    const params = await context.params;
+    const idParam = params?.id;
+    const id = Array.isArray(idParam) ? idParam[0] : idParam;
+
+    if (!id) {
+      return NextResponse.json({ error: 'Check id is required' }, { status: 400 });
+    }
+
+    const check = await Check.findByIdAndDelete(id);
     if (!check) {
       return NextResponse.json({ error: 'Check not found' }, { status: 404 });
     }
 
     await DocumentTemplate.updateMany(
-      { 'checks.checkId': params.id },
-      { $pull: { checks: { checkId: params.id } } }
+      { 'checks.checkId': id },
+      { $pull: { checks: { checkId: id } } }
     );
 
     return NextResponse.json({ success: true });
