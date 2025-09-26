@@ -1767,6 +1767,11 @@ export default function AdminPage() {
           <div className="space-y-2 md:col-span-2">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">Валідації</label>
+              <span className="text-[11px] text-muted-foreground">
+                Валідації — це прості обмеження значень поля (без бізнес-логіки).
+                Використовуйте їх для формату/міндовжини/заборонених фраз тощо.
+                Логіку сценарію оформлюйте у «Перевірках».
+              </span>
               <button
                 type="button"
                 onClick={addFieldValidator}
