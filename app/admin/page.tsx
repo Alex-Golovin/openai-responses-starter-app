@@ -33,18 +33,24 @@ type FieldRecord = {
   validators?: FieldValidatorRecord[];
 };
 
+type TemplateCheckMode = 'single_doc' | 'multi_doc';
+
+type DocumentTemplateCheckRecord = {
+  checkId: string;
+  mode: TemplateCheckMode;
+};
+
 type DocumentTemplateRecord = {
   id: string;
   name: string;
   fieldIds: string[];
+  checks: DocumentTemplateCheckRecord[];
 };
 
 type CheckRecord = {
   id: string;
   description: string;
-  type: 'single_doc' | 'cross_doc';
   whenExpr?: string;
-  docTemplateId?: string;
   rules: CheckRuleRecord[];
   severity: 'low' | 'medium' | 'high';
   onFail?: string;
@@ -52,7 +58,6 @@ type CheckRecord = {
 
 type CheckRuleRecord = {
   target: {
-    docTemplateId?: string | null;
     fieldKey: string;
   };
   operator:
@@ -72,7 +77,6 @@ type CheckRuleRecord = {
 
 type CheckRuleForm = {
   id: string;
-  templateId: string;
   fieldKey: string;
   operator: CheckRuleRecord['operator'];
   value: string;
@@ -143,9 +147,9 @@ const FIELD_TYPE_LABELS: Record<FieldRecord['type'], string> = {
   enum: 'Список значень',
 };
 
-const CHECK_TYPE_LABELS: Record<CheckRecord['type'], string> = {
+const TEMPLATE_CHECK_MODE_LABELS: Record<TemplateCheckMode, string> = {
   single_doc: 'Один документ',
-  cross_doc: 'Порівняння документів',
+  multi_doc: 'Кілька документів',
 };
 
 const CHECK_SEVERITY_LABELS: Record<CheckRecord['severity'], string> = {
@@ -173,13 +177,16 @@ type FieldFormState = {
 type TemplateFormState = {
   name: string;
   fieldIds: string[];
+  checks: DocumentTemplateCheckRecord[];
+  checkDraft: {
+    checkId: string;
+    mode: TemplateCheckMode;
+  };
 };
 
 type CheckFormState = {
   description: string;
-  type: CheckRecord['type'];
   whenExpr: string;
-  docTemplateId: string;
   severity: CheckRecord['severity'];
   onFail: string;
   rules: CheckRuleForm[];
@@ -230,21 +237,20 @@ const createEmptyFieldForm = (): FieldFormState => ({
 const createEmptyTemplateForm = (): TemplateFormState => ({
   name: '',
   fieldIds: [],
+  checks: [],
+  checkDraft: { checkId: '', mode: 'single_doc' },
 });
 
 const createEmptyCheckForm = (): CheckFormState => ({
   description: '',
-  type: 'single_doc',
   whenExpr: '',
-  docTemplateId: '',
   severity: 'medium',
   onFail: '',
   rules: [],
   ruleDraft: createEmptyRuleDraft(),
 });
 
-const createEmptyRuleDraft = (templateId = ''): CheckRuleDraft => ({
-  templateId,
+const createEmptyRuleDraft = (): CheckRuleDraft => ({
   fieldKey: '',
   operator: 'equals',
   value: '',
@@ -377,6 +383,7 @@ export default function AdminPage() {
   const [editingCheckId, setEditingCheckId] = useState<string | null>(null);
   const [checkSubmitting, setCheckSubmitting] = useState(false);
   const [checkFormVisible, setCheckFormVisible] = useState(false);
+  const [ruleDraftVisible, setRuleDraftVisible] = useState(false);
 
   const [topics, setTopics] = useState<TopicRecord[]>([]);
   const [topicForm, setTopicForm] = useState<TopicFormState>(() =>
@@ -411,6 +418,14 @@ export default function AdminPage() {
   const resetCheckFormState = () => {
     setCheckForm(createEmptyCheckForm());
     setEditingCheckId(null);
+    setRuleDraftVisible(false);
+  };
+
+  const resetRuleDraft = () => {
+    setCheckForm((prev) => ({
+      ...prev,
+      ruleDraft: createEmptyRuleDraft(),
+    }));
   };
 
   const resetTopicFormState = () => {
@@ -422,7 +437,18 @@ export default function AdminPage() {
     const data = await fetchJson<FieldRecord[]>('/api/admin/fields', {
       cache: 'no-store',
     });
-    setFields(data);
+    const normalized = data.map((field) => ({
+      ...field,
+      options: field.options
+        ? field.options.map((option) =>
+            typeof option === 'string'
+              ? { label: option, value: option }
+              : option
+          )
+        : undefined,
+      validators: field.validators?.map((validator) => ({ ...validator })),
+    }));
+    setFields(normalized);
   };
 
   const loadTemplates = async () => {
@@ -430,7 +456,17 @@ export default function AdminPage() {
       '/api/admin/document-templates',
       { cache: 'no-store' }
     );
-    setTemplates(data);
+    const normalized = data.map((template) => ({
+      ...template,
+      fieldIds: template.fieldIds || [],
+      checks: Array.isArray(template.checks)
+        ? template.checks.map((ref) => ({
+            checkId: ref.checkId,
+            mode: ref.mode === 'multi_doc' ? 'multi_doc' : 'single_doc',
+          }))
+        : [],
+    }));
+    setTemplates(normalized);
   };
 
   const loadChecks = async () => {
@@ -457,49 +493,8 @@ export default function AdminPage() {
     })();
   }, []);
 
-  useEffect(() => {
-    if (checkForm.type !== 'single_doc') {
-      return;
-    }
-
-    setCheckForm((prev) => {
-      if (prev.type !== 'single_doc') {
-        return prev;
-      }
-
-      const templateId = prev.docTemplateId;
-      let rulesChanged = false;
-      const updatedRules = prev.rules.map((rule) => {
-        if (rule.templateId === templateId) {
-          return rule;
-        }
-        rulesChanged = true;
-        return { ...rule, templateId };
-      });
-
-      const draftChanged = prev.ruleDraft.templateId !== templateId;
-
-      if (!rulesChanged && !draftChanged) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        rules: rulesChanged ? updatedRules : prev.rules,
-        ruleDraft: draftChanged
-          ? { ...prev.ruleDraft, templateId }
-          : prev.ruleDraft,
-      };
-    });
-  }, [checkForm.type, checkForm.docTemplateId, setCheckForm]);
-
   const fieldTypeOptions: FieldRecord['type'][] = useMemo(
     () => ['string', 'number', 'boolean', 'date', 'enum'],
-    []
-  );
-
-  const checkTypeOptions: CheckRecord['type'][] = useMemo(
-    () => ['single_doc', 'cross_doc'],
     []
   );
 
@@ -507,14 +502,6 @@ export default function AdminPage() {
     () => ['low', 'medium', 'high'],
     []
   );
-
-  const fieldsById = useMemo(() => {
-    const map = new Map<string, FieldRecord>();
-    fields.forEach((field) => {
-      map.set(field.id, field);
-    });
-    return map;
-  }, [fields]);
 
   const fieldsByKey = useMemo(() => {
     const map = new Map<string, FieldRecord>();
@@ -524,31 +511,6 @@ export default function AdminPage() {
     return map;
   }, [fields]);
 
-  const templateFieldsMap = useMemo(() => {
-    const map = new Map<string, FieldRecord[]>();
-    templates.forEach((template) => {
-      const templateFields = template.fieldIds
-        .map((fieldId) => fieldsById.get(fieldId))
-        .filter((field): field is FieldRecord => Boolean(field));
-      map.set(template.id, templateFields);
-    });
-    return map;
-  }, [templates, fieldsById]);
-
-  const templateById = useMemo(() => {
-    const map = new Map<string, DocumentTemplateRecord>();
-    templates.forEach((template) => {
-      map.set(template.id, template);
-    });
-    return map;
-  }, [templates]);
-
-  const getFieldsForTemplate = (templateId: string) => {
-    if (!templateId) {
-      return [];
-    }
-    return templateFieldsMap.get(templateId) ?? [];
-  };
 
   const operatorRequiresValue = (operator: CheckRuleRecord['operator']) =>
     !OPERATORS_WITHOUT_VALUE.includes(operator);
@@ -817,9 +779,9 @@ export default function AdminPage() {
       label: field.label,
       type: field.type,
       options: (field.options || []).map((option) => ({
-        id: `${field.id}-${option.value}`,
-        label: option.label,
-        value: option.value,
+        id: `${field.id}-${typeof option === 'string' ? option : option.value}`,
+        label: typeof option === 'string' ? option : option.label,
+        value: typeof option === 'string' ? option : option.value,
         isEditable: false,
       })),
       extractHint: field.extractHint || '',
@@ -955,13 +917,62 @@ export default function AdminPage() {
     });
   };
 
+  const addTemplateCheck = () => {
+    const { checkId } = templateForm.checkDraft;
+    if (!checkId) {
+      showError('Оберіть перевірку, щоб додати її до шаблону');
+      return;
+    }
+    if (templateForm.checks.some((ref) => ref.checkId === checkId)) {
+      showError('Ця перевірка вже додана до шаблону');
+      setTemplateForm((prev) => ({
+        ...prev,
+        checkDraft: { checkId: '', mode: 'single_doc' },
+      }));
+      return;
+    }
+    setTemplateForm((prev) => ({
+      ...prev,
+      checks: [
+        ...prev.checks,
+        { checkId: prev.checkDraft.checkId, mode: prev.checkDraft.mode },
+      ],
+      checkDraft: { checkId: '', mode: 'single_doc' },
+    }));
+  };
+
+  const updateTemplateCheckMode = (index: number, mode: TemplateCheckMode) => {
+    setTemplateForm((prev) => ({
+      ...prev,
+      checks: prev.checks.map((ref, idx) =>
+        idx === index
+          ? {
+              ...ref,
+              mode,
+            }
+          : ref
+      ),
+    }));
+  };
+
+  const removeTemplateCheck = (index: number) => {
+    setTemplateForm((prev) => ({
+      ...prev,
+      checks: prev.checks.filter((_, idx) => idx !== index),
+    }));
+  };
+
   const handleTemplateSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     clearFeedback();
 
     const payload = {
       name: templateForm.name.trim(),
-      fieldIds: templateForm.fieldIds,
+      fieldIds: Array.from(new Set(templateForm.fieldIds)),
+      checks: templateForm.checks.map((ref) => ({
+        checkId: ref.checkId,
+        mode: ref.mode,
+      })),
     };
 
     setTemplateSubmitting(true);
@@ -998,6 +1009,8 @@ export default function AdminPage() {
     setTemplateForm({
       name: template.name,
       fieldIds: template.fieldIds || [],
+      checks: (template.checks || []).map((ref) => ({ ...ref })),
+      checkDraft: { checkId: '', mode: 'single_doc' },
     });
   };
 
@@ -1018,11 +1031,6 @@ export default function AdminPage() {
     event.preventDefault();
     clearFeedback();
 
-    if (checkForm.type === 'single_doc' && !checkForm.docTemplateId) {
-      showError('Оберіть шаблон документа для перевірки');
-      return;
-    }
-
     if (checkForm.rules.length === 0) {
       showError('Додайте принаймні одне правило');
       return;
@@ -1032,15 +1040,6 @@ export default function AdminPage() {
 
     for (let index = 0; index < checkForm.rules.length; index += 1) {
       const rule = checkForm.rules[index];
-      const templateIdRaw =
-        checkForm.type === 'single_doc' ? checkForm.docTemplateId : rule.templateId;
-
-      const templateId = templateIdRaw?.trim();
-      if (!templateId) {
-        showError(`Правило ${index + 1}: оберіть шаблон документа`);
-        return;
-      }
-
       if (!rule.fieldKey) {
         showError(`Правило ${index + 1}: оберіть поле для перевірки`);
         return;
@@ -1075,7 +1074,6 @@ export default function AdminPage() {
 
       rules.push({
         target: {
-          docTemplateId: templateId,
           fieldKey: rule.fieldKey,
         },
         operator: rule.operator,
@@ -1086,12 +1084,7 @@ export default function AdminPage() {
 
     const payload = {
       description: checkForm.description.trim(),
-      type: checkForm.type,
       whenExpr: checkForm.whenExpr.trim() || undefined,
-      docTemplateId:
-        checkForm.type === 'single_doc' && checkForm.docTemplateId
-          ? checkForm.docTemplateId
-          : undefined,
       rules,
       severity: checkForm.severity,
       onFail: checkForm.onFail.trim() || undefined,
@@ -1128,29 +1121,20 @@ export default function AdminPage() {
     clearFeedback();
     setEditingCheckId(check.id);
     setCheckFormVisible(true);
+    setRuleDraftVisible(false);
     setCheckForm({
       description: check.description,
-      type: check.type,
       whenExpr: check.whenExpr || '',
-      docTemplateId: check.docTemplateId || '',
       severity: check.severity,
       onFail: check.onFail || '',
       rules: (check.rules || []).map((rule) => ({
         id: generateRuleId(),
-        templateId:
-          (typeof rule.target?.docTemplateId === 'string'
-            ? rule.target.docTemplateId
-            : rule.target?.docTemplateId?.toString()) ||
-          check.docTemplateId ||
-          '',
         fieldKey: rule.target?.fieldKey || '',
         operator: rule.operator,
         value: formatRuleValueForInput(rule),
         message: rule.message || '',
       })),
-      ruleDraft: createEmptyRuleDraft(
-        check.type === 'single_doc' ? check.docTemplateId || '' : ''
-      ),
+      ruleDraft: createEmptyRuleDraft(),
     });
   };
 
@@ -1306,19 +1290,6 @@ export default function AdminPage() {
     clearFeedback();
 
     const draft = checkForm.ruleDraft;
-    const effectiveTemplateId =
-      checkForm.type === 'single_doc' ? checkForm.docTemplateId : draft.templateId;
-
-    if (checkForm.type === 'single_doc' && !checkForm.docTemplateId) {
-      showError('Спочатку оберіть шаблон документа для перевірки');
-      return;
-    }
-
-    if (!effectiveTemplateId) {
-      showError('Оберіть шаблон документа для правила');
-      return;
-    }
-
     if (!draft.fieldKey) {
       showError('Оберіть поле, яке потрібно перевірити');
       return;
@@ -1355,18 +1326,15 @@ export default function AdminPage() {
         ...prev.rules,
         {
           id: generateRuleId(),
-          templateId:
-            prev.type === 'single_doc' ? prev.docTemplateId : prev.ruleDraft.templateId,
           fieldKey: prev.ruleDraft.fieldKey,
           operator: prev.ruleDraft.operator,
           value: requiresValue ? prev.ruleDraft.value.trim() : '',
           message: prev.ruleDraft.message.trim(),
         },
       ],
-      ruleDraft: createEmptyRuleDraft(
-        prev.type === 'single_doc' ? prev.docTemplateId : ''
-      ),
+      ruleDraft: createEmptyRuleDraft(),
     }));
+    setRuleDraftVisible(false);
   };
 
   const removeCheckRule = (index: number) => {
@@ -1379,6 +1347,7 @@ export default function AdminPage() {
 
   const editCheckRule = (index: number) => {
     clearFeedback();
+    setRuleDraftVisible(true);
     setCheckForm((prev) => {
       const rule = prev.rules[index];
       if (!rule) {
@@ -1391,8 +1360,6 @@ export default function AdminPage() {
         ...prev,
         rules: remaining,
         ruleDraft: {
-          templateId:
-            prev.type === 'single_doc' ? prev.docTemplateId : rule.templateId,
           fieldKey: rule.fieldKey,
           operator: rule.operator,
           value: rule.value,
@@ -1515,14 +1482,7 @@ export default function AdminPage() {
     }
   };
 
-  const ruleBuilderTemplateId =
-    checkForm.type === 'single_doc'
-      ? checkForm.docTemplateId
-      : checkForm.ruleDraft.templateId;
-
-  const ruleBuilderFields = ruleBuilderTemplateId
-    ? getFieldsForTemplate(ruleBuilderTemplateId)
-    : [];
+  const ruleBuilderFields = fields;
 
   const ruleBuilderSelectedField = fieldsByKey.get(
     checkForm.ruleDraft.fieldKey
@@ -1688,20 +1648,14 @@ export default function AdminPage() {
               className="w-full rounded-md border px-3 py-2 text-sm disabled:bg-gray-100"
               placeholder="Наприклад: Номер паспорта"
             />
+            {!editingFieldId && (
+              <p className="text-[11px] text-muted-foreground">
+                Системний ключ зʼявиться автоматично після збереження.
+              </p>
+            )}
             {editingFieldId && (
               <p className="text-[11px] text-muted-foreground">
                 Змінити назву можна лише створивши нове поле.
-              </p>
-            )}
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Системний ключ</label>
-            <div className="rounded-md border bg-gray-50 px-3 py-2 text-sm font-mono text-gray-600">
-              {fieldForm.key || '—'}
-            </div>
-            {!editingFieldId && (
-              <p className="text-[11px] text-muted-foreground">
-                Генерується автоматично за назвою поля.
               </p>
             )}
           </div>
@@ -1745,6 +1699,9 @@ export default function AdminPage() {
           {fieldForm.type === 'enum' && (
             <div className="space-y-1 md:col-span-1">
               <label className="text-sm font-medium">Варіанти списку</label>
+              <p className="text-[11px] text-muted-foreground">
+                Значення для збереження створюються автоматично з назви варіанту.
+              </p>
               <div className="space-y-2">
                 {fieldForm.options.length === 0 ? (
                   <p className="text-xs text-muted-foreground">
@@ -1766,15 +1723,6 @@ export default function AdminPage() {
                             />
                           ) : (
                             <p className="text-sm font-medium">{option.label}</p>
-                          )}
-                          <p className="text-[11px] text-muted-foreground">
-                            Системний ключ:{' '}
-                            <span className="font-mono">{option.value || '—'}</span>
-                          </p>
-                          {!option.isEditable && (
-                            <p className="text-[11px] text-muted-foreground">
-                              Щоб змінити назву, видаліть варіант та створіть новий.
-                            </p>
                           )}
                         </div>
                         <button
@@ -1972,7 +1920,7 @@ export default function AdminPage() {
                   <div>
                     <p className="font-medium">{template.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      Поля: {template.fieldIds.length}
+                      Поля: {template.fieldIds.length} · Перевірки: {template.checks?.length || 0}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -2035,6 +1983,122 @@ export default function AdminPage() {
               })}
             </div>
           </div>
+        <div className="space-y-3">
+          <div>
+            <p className="text-sm font-medium">Перевірки</p>
+            <p className="text-xs text-muted-foreground">
+              Додайте перевірку та оберіть, чи вона працює з одним документом, чи з кількома.
+            </p>
+          </div>
+          {checks.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Створіть перевірки на вкладці «Перевірки», щоб додати їх до шаблону.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {templateForm.checks.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Перевірки ще не додані.
+                </p>
+              ) : (
+                templateForm.checks.map((ref, index) => {
+                  const checkInfo = checks.find((item) => item.id === ref.checkId);
+                  return (
+                    <div
+                      key={`${ref.checkId}-${index}`}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-3 text-xs"
+                    >
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">
+                          {checkInfo?.description || 'Перевірка видалена'}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Режим: {TEMPLATE_CHECK_MODE_LABELS[ref.mode]}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Важливість: {CHECK_SEVERITY_LABELS[checkInfo?.severity || 'medium']}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          value={ref.mode}
+                          onChange={(event) =>
+                            updateTemplateCheckMode(
+                              index,
+                              event.target.value as TemplateCheckMode
+                            )
+                          }
+                          className="rounded-md border px-2 py-1 text-xs"
+                        >
+                          <option value="single_doc">Один документ</option>
+                          <option value="multi_doc">Кілька документів</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => removeTemplateCheck(index)}
+                          className="text-xs text-red-600 hover:underline"
+                        >
+                          Видалити
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_170px_auto]">
+                <select
+                  value={templateForm.checkDraft.checkId}
+                  onChange={(event) =>
+                    setTemplateForm((prev) => ({
+                      ...prev,
+                      checkDraft: {
+                        ...prev.checkDraft,
+                        checkId: event.target.value,
+                      },
+                    }))
+                  }
+                  className="rounded-md border px-3 py-2 text-sm"
+                >
+                  <option value="">Оберіть перевірку</option>
+                  {checks.map((check) => (
+                    <option
+                      key={check.id}
+                      value={check.id}
+                      disabled={templateForm.checks.some((ref) => ref.checkId === check.id)}
+                    >
+                      {check.description}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={templateForm.checkDraft.mode}
+                  onChange={(event) =>
+                    setTemplateForm((prev) => ({
+                      ...prev,
+                      checkDraft: {
+                        ...prev.checkDraft,
+                        mode: event.target.value as TemplateCheckMode,
+                      },
+                    }))
+                  }
+                  className="rounded-md border px-3 py-2 text-sm"
+                >
+                  <option value="single_doc">Один документ</option>
+                  <option value="multi_doc">Кілька документів</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={addTemplateCheck}
+                  className="inline-flex items-center justify-center gap-1 rounded-md border border-blue-600 px-3 py-2 text-sm text-blue-600 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={!templateForm.checkDraft.checkId}
+                >
+                  <span className="text-lg leading-none">＋</span>
+                  Додати
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
           <button
             type="submit"
             disabled={templateSubmitting}
@@ -2096,7 +2160,18 @@ export default function AdminPage() {
                   <div>
                     <p className="font-medium">{check.description}</p>
                     <p className="text-xs text-muted-foreground">
-                      {CHECK_TYPE_LABELS[check.type]} · {CHECK_SEVERITY_LABELS[check.severity]}
+                      Важливість: {CHECK_SEVERITY_LABELS[check.severity]}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Використовується в:{' '}
+                      {templates
+                        .filter((template) =>
+                          template.checks?.some(
+                            (ref) => ref.checkId === check.id
+                          )
+                        )
+                        .map((template) => template.name)
+                        .join(', ') || 'жодному шаблоні'}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -2139,41 +2214,6 @@ export default function AdminPage() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">Тип</label>
-            <select
-              value={checkForm.type}
-              onChange={(event) =>
-                setCheckForm((prev) => {
-                  const nextType = event.target.value as CheckRecord['type'];
-                  if (prev.type === nextType) {
-                    return prev;
-                  }
-                  if (nextType === 'single_doc') {
-                    return {
-                      ...prev,
-                      type: nextType,
-                      docTemplateId: '',
-                      ruleDraft: createEmptyRuleDraft(''),
-                    };
-                  }
-                  return {
-                    ...prev,
-                    type: nextType,
-                    docTemplateId: '',
-                    ruleDraft: createEmptyRuleDraft(''),
-                  };
-                })
-              }
-              className="w-full rounded-md border px-3 py-2 text-sm"
-            >
-              {checkTypeOptions.map((option) => (
-                <option key={option} value={option}>
-                  {CHECK_TYPE_LABELS[option]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1">
             <label className="text-sm font-medium">Критичність</label>
             <select
               value={checkForm.severity}
@@ -2211,55 +2251,38 @@ export default function AdminPage() {
               Текст для команди. Логіка виконується за правилами нижче.
             </p>
           </div>
-          {checkForm.type === 'single_doc' ? (
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-sm font-medium">Шаблон документа</label>
-              <select
-                value={checkForm.docTemplateId}
-                onChange={(event) =>
-                  setCheckForm((prev) => ({
-                    ...prev,
-                    docTemplateId: event.target.value,
-                  }))
-                }
-                className="w-full rounded-md border px-3 py-2 text-sm"
-              >
-                <option value="">Оберіть шаблон</option>
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.name}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">
-                Перевірка застосовується до цього документа.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-sm font-medium">Перевірка між документами</label>
-              <p className="text-xs text-muted-foreground">
-                Для кожного правила нижче оберіть відповідний шаблон.
-              </p>
-            </div>
-          )}
           <div className="space-y-3 md:col-span-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Правила перевірки</h3>
-              <span className="text-xs text-muted-foreground">
-                {checkForm.rules.length} шт.
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold">Правила перевірки</h3>
+                <p className="text-[11px] text-muted-foreground">
+                  Правила виконуються послідовно зверху вниз.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {checkForm.rules.length} шт.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRuleDraftVisible((prev) => !prev);
+                    resetRuleDraft();
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-blue-600 px-3 py-2 text-xs font-medium text-blue-600 transition hover:bg-blue-50"
+                >
+                  <span className="text-lg leading-none">＋</span>
+                  <span className="hidden sm:inline">Додати правило</span>
+                </button>
+              </div>
             </div>
             {checkForm.rules.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                Поки що правил немає. Додайте перше нижче.
+                Поки що правил немає. Натисніть «＋», щоб додати перше правило.
               </p>
             ) : (
               <div className="space-y-2">
                 {checkForm.rules.map((rule, index) => {
-                  const templateName = rule.templateId
-                    ? templateById.get(rule.templateId)?.name || 'Документ'
-                    : 'Будь-який документ';
                   const fieldInfo = fieldsByKey.get(rule.fieldKey);
                   const fieldLabel = fieldInfo?.label || rule.fieldKey;
                   const operatorLabel =
@@ -2277,7 +2300,7 @@ export default function AdminPage() {
                         <div className="space-y-1">
                           <p className="font-semibold">{fieldLabel}</p>
                           <p className="text-muted-foreground">
-                            {templateName} · {operatorLabel}
+                            {operatorLabel}
                             {requiresValue
                               ? ` → ${formatRuleValueForDisplay(rule.value, fieldInfo)}`
                               : ''}
@@ -2306,225 +2329,206 @@ export default function AdminPage() {
                 })}
               </div>
             )}
-            <div className="space-y-3 rounded-md border px-3 py-3">
-              <div className="grid gap-2 md:grid-cols-2">
-                {checkForm.type === 'cross_doc' && (
+            {ruleDraftVisible && (
+              <div className="space-y-3 rounded-md border px-3 py-3">
+                <div className="grid gap-2 md:grid-cols-2">
                   <div className="space-y-1">
-                    <label className="text-xs font-medium">Шаблон документа</label>
+                    <label className="text-xs font-medium">Поле</label>
                     <select
-                      value={checkForm.ruleDraft.templateId}
+                      value={checkForm.ruleDraft.fieldKey}
+                      onChange={(event) =>
+                        setCheckForm((prev) => {
+                          const nextFieldKey = event.target.value;
+                          const nextField = fieldsByKey.get(nextFieldKey);
+                          const prevField = fieldsByKey.get(prev.ruleDraft.fieldKey);
+                          const resetValue =
+                            (prevField?.type || '') !== (nextField?.type || '')
+                              ? ''
+                              : prev.ruleDraft.value;
+                          return {
+                            ...prev,
+                            ruleDraft: {
+                              ...prev.ruleDraft,
+                              fieldKey: nextFieldKey,
+                              value: resetValue,
+                            },
+                          };
+                        })
+                      }
+                      className="w-full rounded-md border px-3 py-2 text-sm"
+                    >
+                      <option value="">Оберіть поле</option>
+                      {ruleBuilderFields.map((field) => (
+                        <option key={field.id ?? field.key} value={field.key}>
+                          {field.label} ({field.key})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Оператор</label>
+                    <select
+                      value={checkForm.ruleDraft.operator}
+                      onChange={(event) =>
+                        setCheckForm((prev) => {
+                          const nextOperator = event.target.value as CheckRuleRecord['operator'];
+                          const requiresValue = operatorRequiresValue(nextOperator);
+                          return {
+                            ...prev,
+                            ruleDraft: {
+                              ...prev.ruleDraft,
+                              operator: nextOperator,
+                              value: requiresValue ? prev.ruleDraft.value : '',
+                            },
+                          };
+                        })
+                      }
+                      className="w-full rounded-md border px-3 py-2 text-sm"
+                    >
+                      {CHECK_RULE_OPERATORS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {ruleBuilderRequiresValue && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">Значення</label>
+                      {ruleBuilderSelectedField?.type === 'boolean' ? (
+                        <select
+                          value={checkForm.ruleDraft.value}
+                          onChange={(event) =>
+                            setCheckForm((prev) => ({
+                              ...prev,
+                              ruleDraft: {
+                                ...prev.ruleDraft,
+                                value: event.target.value,
+                              },
+                            }))
+                          }
+                          className="w-full rounded-md border px-3 py-2 text-sm"
+                          disabled={!checkForm.ruleDraft.fieldKey}
+                        >
+                          <option value="">Оберіть значення</option>
+                          <option value="true">Так</option>
+                          <option value="false">Ні</option>
+                        </select>
+                      ) : ruleBuilderSelectedField?.type === 'enum' &&
+                        ruleBuilderFieldOptions.length > 0 ? (
+                        <select
+                          value={checkForm.ruleDraft.value}
+                          onChange={(event) =>
+                            setCheckForm((prev) => ({
+                              ...prev,
+                              ruleDraft: {
+                                ...prev.ruleDraft,
+                                value: event.target.value,
+                              },
+                            }))
+                          }
+                          className="w-full rounded-md border px-3 py-2 text-sm"
+                          disabled={!checkForm.ruleDraft.fieldKey}
+                        >
+                          <option value="">Оберіть значення</option>
+                          {ruleBuilderFieldOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : ruleBuilderSelectedField?.type === 'number' ? (
+                        <input
+                          type="number"
+                          value={checkForm.ruleDraft.value}
+                          onChange={(event) =>
+                            setCheckForm((prev) => ({
+                              ...prev,
+                              ruleDraft: {
+                                ...prev.ruleDraft,
+                                value: event.target.value,
+                              },
+                            }))
+                          }
+                          className="w-full rounded-md border px-3 py-2 text-sm"
+                          disabled={!checkForm.ruleDraft.fieldKey}
+                        />
+                      ) : ruleBuilderSelectedField?.type === 'date' ? (
+                        <input
+                          type="date"
+                          value={checkForm.ruleDraft.value}
+                          onChange={(event) =>
+                            setCheckForm((prev) => ({
+                              ...prev,
+                              ruleDraft: {
+                                ...prev.ruleDraft,
+                                value: event.target.value,
+                              },
+                            }))
+                          }
+                          className="w-full rounded-md border px-3 py-2 text-sm"
+                          disabled={!checkForm.ruleDraft.fieldKey}
+                        />
+                      ) : (
+                        <input
+                          value={checkForm.ruleDraft.value}
+                          onChange={(event) =>
+                            setCheckForm((prev) => ({
+                              ...prev,
+                              ruleDraft: {
+                                ...prev.ruleDraft,
+                                value: event.target.value,
+                              },
+                            }))
+                          }
+                          className="w-full rounded-md border px-3 py-2 text-sm"
+                          placeholder="Очікуване значення"
+                          disabled={!checkForm.ruleDraft.fieldKey}
+                        />
+                      )}
+                    </div>
+                  )}
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-xs font-medium">
+                      Що робити, якщо правило спрацює
+                    </label>
+                    <textarea
+                      value={checkForm.ruleDraft.message}
                       onChange={(event) =>
                         setCheckForm((prev) => ({
                           ...prev,
                           ruleDraft: {
                             ...prev.ruleDraft,
-                            templateId: event.target.value,
-                            fieldKey: '',
-                            value: '',
+                            message: event.target.value,
                           },
                         }))
                       }
-                      className="w-full rounded-md border px-3 py-2 text-sm"
-                    >
-                      <option value="">Оберіть шаблон</option>
-                      {templates.map((template) => (
-                        <option key={template.id} value={template.id}>
-                          {template.name}
-                        </option>
-                      ))}
-                    </select>
+                      className="h-20 w-full rounded-md border px-3 py-2 text-sm"
+                      placeholder="Наприклад: Попросити клієнта оновити довідку"
+                    />
                   </div>
-                )}
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Поле</label>
-                  <select
-                    value={checkForm.ruleDraft.fieldKey}
-                    onChange={(event) =>
-                      setCheckForm((prev) => {
-                        const nextFieldKey = event.target.value;
-                        const nextField = fieldsByKey.get(nextFieldKey);
-                        const prevField = fieldsByKey.get(prev.ruleDraft.fieldKey);
-                        const resetValue =
-                          (prevField?.type || '') !== (nextField?.type || '')
-                            ? ''
-                            : prev.ruleDraft.value;
-                        return {
-                          ...prev,
-                          ruleDraft: {
-                            ...prev.ruleDraft,
-                            fieldKey: nextFieldKey,
-                            value: resetValue,
-                          },
-                        };
-                      })
-                    }
-                    className="w-full rounded-md border px-3 py-2 text-sm"
-                    disabled={!ruleBuilderTemplateId}
-                  >
-                    <option value="">Оберіть поле</option>
-                    {ruleBuilderFields.map((field) => (
-                      <option key={field.key} value={field.key}>
-                        {field.label} ({field.key})
-                      </option>
-                    ))}
-                  </select>
-                  {!ruleBuilderTemplateId && (
-                    <p className="text-[11px] text-muted-foreground">
-                      Спочатку оберіть шаблон документа.
-                    </p>
-                  )}
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Оператор</label>
-                  <select
-                    value={checkForm.ruleDraft.operator}
-                    onChange={(event) =>
-                      setCheckForm((prev) => {
-                        const nextOperator = event.target.value as CheckRuleRecord['operator'];
-                        const requiresValue = operatorRequiresValue(nextOperator);
-                        return {
-                          ...prev,
-                          ruleDraft: {
-                            ...prev.ruleDraft,
-                            operator: nextOperator,
-                            value: requiresValue ? prev.ruleDraft.value : '',
-                          },
-                        };
-                      })
-                    }
-                    className="w-full rounded-md border px-3 py-2 text-sm"
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRuleDraftVisible(false);
+                      resetRuleDraft();
+                    }}
+                    className="rounded-md border px-3 py-2 text-xs text-muted-foreground transition hover:bg-gray-100"
                   >
-                    {CHECK_RULE_OPERATORS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {ruleBuilderRequiresValue && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">Значення</label>
-                    {ruleBuilderSelectedField?.type === 'boolean' ? (
-                      <select
-                        value={checkForm.ruleDraft.value}
-                        onChange={(event) =>
-                          setCheckForm((prev) => ({
-                            ...prev,
-                            ruleDraft: {
-                              ...prev.ruleDraft,
-                              value: event.target.value,
-                            },
-                          }))
-                        }
-                        className="w-full rounded-md border px-3 py-2 text-sm"
-                        disabled={!checkForm.ruleDraft.fieldKey}
-                      >
-                        <option value="">Оберіть значення</option>
-                        <option value="true">Так</option>
-                        <option value="false">Ні</option>
-                      </select>
-                    ) : ruleBuilderSelectedField?.type === 'enum' &&
-                      ruleBuilderFieldOptions.length > 0 ? (
-                      <select
-                        value={checkForm.ruleDraft.value}
-                        onChange={(event) =>
-                          setCheckForm((prev) => ({
-                            ...prev,
-                            ruleDraft: {
-                              ...prev.ruleDraft,
-                              value: event.target.value,
-                            },
-                          }))
-                        }
-                        className="w-full rounded-md border px-3 py-2 text-sm"
-                        disabled={!checkForm.ruleDraft.fieldKey}
-                      >
-                        <option value="">Оберіть значення</option>
-                        {ruleBuilderFieldOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    ) : ruleBuilderSelectedField?.type === 'number' ? (
-                      <input
-                        type="number"
-                        value={checkForm.ruleDraft.value}
-                        onChange={(event) =>
-                          setCheckForm((prev) => ({
-                            ...prev,
-                            ruleDraft: {
-                              ...prev.ruleDraft,
-                              value: event.target.value,
-                            },
-                          }))
-                        }
-                        className="w-full rounded-md border px-3 py-2 text-sm"
-                        disabled={!checkForm.ruleDraft.fieldKey}
-                      />
-                    ) : ruleBuilderSelectedField?.type === 'date' ? (
-                      <input
-                        type="date"
-                        value={checkForm.ruleDraft.value}
-                        onChange={(event) =>
-                          setCheckForm((prev) => ({
-                            ...prev,
-                            ruleDraft: {
-                              ...prev.ruleDraft,
-                              value: event.target.value,
-                            },
-                          }))
-                        }
-                        className="w-full rounded-md border px-3 py-2 text-sm"
-                        disabled={!checkForm.ruleDraft.fieldKey}
-                      />
-                    ) : (
-                      <input
-                        value={checkForm.ruleDraft.value}
-                        onChange={(event) =>
-                          setCheckForm((prev) => ({
-                            ...prev,
-                            ruleDraft: {
-                              ...prev.ruleDraft,
-                              value: event.target.value,
-                            },
-                          }))
-                        }
-                        className="w-full rounded-md border px-3 py-2 text-sm"
-                        placeholder="Очікуване значення"
-                        disabled={!checkForm.ruleDraft.fieldKey}
-                      />
-                    )}
-                  </div>
-                )}
-                <div className="space-y-1 md:col-span-2">
-                  <label className="text-xs font-medium">
-                    Що робити, якщо правило спрацює
-                  </label>
-                  <textarea
-                    value={checkForm.ruleDraft.message}
-                    onChange={(event) =>
-                      setCheckForm((prev) => ({
-                        ...prev,
-                        ruleDraft: {
-                          ...prev.ruleDraft,
-                          message: event.target.value,
-                        },
-                      }))
-                    }
-                    className="h-20 w-full rounded-md border px-3 py-2 text-sm"
-                    placeholder="Наприклад: Попросити клієнта оновити довідку"
-                  />
+                    Скасувати
+                  </button>
+                  <button
+                    type="button"
+                    onClick={addCheckRule}
+                    className="rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700"
+                  >
+                    Зберегти правило
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={addCheckRule}
-                className="inline-flex items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700"
-              >
-                Додати правило
-              </button>
-            </div>
+            )}
           </div>
           <div className="space-y-1 md:col-span-2">
             <label className="text-sm font-medium">

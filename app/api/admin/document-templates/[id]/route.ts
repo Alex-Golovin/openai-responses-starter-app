@@ -12,9 +12,32 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     await connectToDatabase();
     const payload = await request.json();
+    const fieldIds = Array.isArray(payload.fieldIds) ? payload.fieldIds : [];
+    const checks = Array.isArray(payload.checks)
+      ? payload.checks
+          .map((item: unknown) => {
+            if (!item || typeof item !== 'object') {
+              return null;
+            }
+            const { checkId, mode } = item as {
+              checkId?: string;
+              mode?: string;
+            };
+            if (!checkId) {
+              return null;
+            }
+            const normalizedMode = mode === 'multi_doc' ? 'multi_doc' : 'single_doc';
+            return { checkId, mode: normalizedMode };
+          })
+          .filter(Boolean)
+      : [];
     const template = await DocumentTemplate.findByIdAndUpdate(
       params.id,
-      payload,
+      {
+        name: payload.name,
+        fieldIds,
+        checks,
+      },
       {
         new: true,
         runValidators: true,

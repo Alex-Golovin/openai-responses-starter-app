@@ -14,7 +14,13 @@ export async function POST(request: NextRequest) {
   try {
     await connectToDatabase();
     const payload = await request.json();
-    const check = await Check.create(payload);
+    const check = await Check.create({
+      description: payload.description,
+      whenExpr: payload.whenExpr,
+      rules: Array.isArray(payload.rules) ? payload.rules : [],
+      severity: payload.severity,
+      onFail: payload.onFail,
+    });
     return NextResponse.json(serializeDocument(check.toObject()));
   } catch (error) {
     console.error('Failed to create check', error);
