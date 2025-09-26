@@ -196,7 +196,8 @@ type TopicResponseBlockDraft = {
 
 type TopicFormState = {
   title: string;
-  tagsInput: string;
+  tags: string[];
+  tagInput: string;
   faq: TopicFaq[];
   faqDraft: TopicFaq;
   documents: TopicDocumentRef[];
@@ -301,7 +302,8 @@ const makeUniqueSlug = (base: string, existing: Set<string>): string => {
 
 const createEmptyTopicForm = (): TopicFormState => ({
   title: '',
-  tagsInput: '',
+  tags: [],
+  tagInput: '',
   faq: [],
   faqDraft: { q: '', a: '' },
   documents: [],
@@ -372,6 +374,9 @@ export default function AdminPage() {
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const [topicSubmitting, setTopicSubmitting] = useState(false);
   const [topicFormVisible, setTopicFormVisible] = useState(false);
+  const [faqDraftVisible, setFaqDraftVisible] = useState(false);
+  const [documentDraftVisible, setDocumentDraftVisible] = useState(false);
+  const [responseDraftVisible, setResponseDraftVisible] = useState(false);
 
   const [activeTab, setActiveTab] = useState<
     (typeof ADMIN_TABS)[number]['id']
@@ -1048,10 +1053,7 @@ export default function AdminPage() {
 
     const payload = {
       title: topicForm.title.trim(),
-      tags: topicForm.tagsInput
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean),
+      tags: Array.from(new Set(topicForm.tags.map((tag) => tag.trim()).filter(Boolean))),
       faq: topicForm.faq,
       documents: topicForm.documents.map((doc) => ({
         templateId: doc.templateId,
@@ -1103,7 +1105,8 @@ export default function AdminPage() {
     setTopicFormVisible(true);
     setTopicForm({
       title: topic.title,
-      tagsInput: (topic.tags || []).join(', '),
+      tags: [...(topic.tags || [])],
+      tagInput: '',
       faq: topic.faq || [],
       faqDraft: { q: '', a: '' },
       documents: topic.documents || [],
@@ -1146,6 +1149,7 @@ export default function AdminPage() {
       faq: [...prev.faq, { ...prev.faqDraft }],
       faqDraft: { q: '', a: '' },
     }));
+    setFaqDraftVisible(false);
   };
 
   const removeFaqEntry = (index: number) => {
@@ -1158,8 +1162,8 @@ export default function AdminPage() {
 
   const addDocumentEntry = () => {
     clearFeedback();
-    if (!topicForm.documentDraft.templateId || !topicForm.documentDraft.alias.trim()) {
-      showError('Оберіть шаблон документа та вкажіть alias');
+    if (!topicForm.documentDraft.templateId) {
+      showError('Оберіть шаблон документа');
       return;
     }
     setTopicForm((prev) => ({
@@ -1167,6 +1171,7 @@ export default function AdminPage() {
       documents: [...prev.documents, { ...prev.documentDraft, alias: prev.documentDraft.alias.trim() }],
       documentDraft: { templateId: '', alias: '', required: true },
     }));
+    setDocumentDraftVisible(false);
   };
 
   const removeDocumentEntry = (index: number) => {
@@ -1385,6 +1390,32 @@ export default function AdminPage() {
 
   const ruleBuilderFieldOptions =
     ruleBuilderSelectedField?.options ?? [];
+
+  const commitTagInput = () => {
+    setTopicForm((prev) => {
+      const next = prev.tagInput.trim();
+      if (!next) {
+        return { ...prev, tagInput: '' };
+      }
+      const exists = new Set(prev.tags.map((t) => t.toLowerCase()))
+        .has(next.toLowerCase());
+      if (exists) {
+        return { ...prev, tagInput: '' };
+      }
+      return {
+        ...prev,
+        tags: [...prev.tags, next],
+        tagInput: '',
+      };
+    });
+  };
+
+  const removeTag = (index: number) => {
+    setTopicForm((prev) => ({
+      ...prev,
+      tags: prev.tags.filter((_, idx) => idx !== index),
+    }));
+  };
 
   return (
     <div className="mx-auto max-w-6xl space-y-12 p-6">
@@ -2461,18 +2492,38 @@ export default function AdminPage() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium">Теги (через кому)</label>
-              <input
-                value={topicForm.tagsInput}
-                onChange={(event) =>
-                  setTopicForm((prev) => ({
-                    ...prev,
-                    tagsInput: event.target.value,
-                  }))
-                }
-                className="w-full rounded-md border px-3 py-2 text-sm"
-                placeholder="sale, квартира"
-              />
+              <label className="text-sm font-medium">Теги</label>
+              <div className="flex flex-wrap gap-2 rounded-md border px-2 py-2">
+                {topicForm.tags.map((tag, index) => (
+                  <span key={`${tag}-${index}`} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs">
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={() => removeTag(index)}
+                      className="text-gray-500 hover:text-gray-700"
+                      aria-label="Видалити тег"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                <input
+                  value={topicForm.tagInput}
+                  onChange={(event) =>
+                    setTopicForm((prev) => ({ ...prev, tagInput: event.target.value }))
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ',') {
+                      event.preventDefault();
+                      commitTagInput();
+                    }
+                  }}
+                  onBlur={commitTagInput}
+                  className="min-w-[140px] flex-1 rounded-md px-2 py-1 text-sm outline-none"
+                  placeholder="Додати тег…"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground">Натисніть Enter або кому, щоб додати тег</p>
             </div>
           </div>
 
@@ -2482,10 +2533,10 @@ export default function AdminPage() {
                 <h3 className="text-sm font-semibold">FAQ</h3>
                 <button
                   type="button"
-                  onClick={addFaqEntry}
+                  onClick={() => setFaqDraftVisible((v) => !v)}
                   className="text-xs text-blue-600 hover:underline"
                 >
-                  Додати
+                  {faqDraftVisible ? 'Приховати форму' : '＋ Додати'}
                 </button>
               </div>
               <div className="space-y-2">
@@ -2510,6 +2561,7 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
+              {faqDraftVisible && (
               <div className="space-y-2 rounded-md border px-3 py-3">
                 <div className="space-y-1">
                   <label className="text-xs font-medium">Питання</label>
@@ -2537,7 +2589,17 @@ export default function AdminPage() {
                     className="h-24 w-full rounded-md border px-3 py-2 text-sm"
                   />
                 </div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={addFaqEntry}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    Додати до FAQ
+                  </button>
+                </div>
               </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -2545,10 +2607,10 @@ export default function AdminPage() {
                 <h3 className="text-sm font-semibold">Документи</h3>
                 <button
                   type="button"
-                  onClick={addDocumentEntry}
+                  onClick={() => setDocumentDraftVisible((v) => !v)}
                   className="text-xs text-blue-600 hover:underline"
                 >
-                  Додати
+                  {documentDraftVisible ? 'Приховати форму' : '＋ Додати документ'}
                 </button>
               </div>
               <div className="space-y-2">
@@ -2580,6 +2642,7 @@ export default function AdminPage() {
                   );
                 })}
               </div>
+              {documentDraftVisible && (
               <div className="space-y-2 rounded-md border px-3 py-3">
                 <div className="space-y-1">
                   <label className="text-xs font-medium">Шаблон документа</label>
@@ -2591,6 +2654,12 @@ export default function AdminPage() {
                         documentDraft: {
                           ...prev.documentDraft,
                           templateId: event.target.value,
+                          alias: (() => {
+                            const selected = templates.find((t) => t.id === event.target.value);
+                            const base = selected ? slugify(selected.name) : '';
+                            const existing = new Set(prev.documents.map((d) => d.alias));
+                            return base ? makeUniqueSlug(base, existing) : prev.documentDraft.alias;
+                          })(),
                         },
                       }))
                     }
@@ -2605,21 +2674,11 @@ export default function AdminPage() {
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium">Alias</label>
-                  <input
-                    value={topicForm.documentDraft.alias}
-                    onChange={(event) =>
-                      setTopicForm((prev) => ({
-                        ...prev,
-                        documentDraft: {
-                          ...prev.documentDraft,
-                          alias: event.target.value,
-                        },
-                      }))
-                    }
-                    className="w-full rounded-md border px-3 py-2 text-sm"
-                    placeholder="passport_seller"
-                  />
+                  <label className="text-xs font-medium">Системний alias</label>
+                  <div className="rounded-md bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700">
+                    {topicForm.documentDraft.alias || '—'}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">Alias генерується автоматично з назви шаблону</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <input
@@ -2641,33 +2700,56 @@ export default function AdminPage() {
                     Обовʼязковий документ
                   </label>
                 </div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={addDocumentEntry}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    Додати документ
+                  </button>
+                </div>
               </div>
+              )}
             </div>
           </div>
 
           <div className="space-y-2">
             <h3 className="text-sm font-semibold">Перевірки</h3>
-            <div className="flex flex-wrap gap-2">
-              {checks.map((check) => {
-                const checked = topicForm.checkIds.includes(check.id);
-                return (
-                  <label
-                    key={check.id}
-                    className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${
-                      checked ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      className="h-3 w-3"
-                      checked={checked}
-                      onChange={() => toggleTopicCheck(check.id)}
-                    />
-                    {check.description}
-                  </label>
-                );
-              })}
-            </div>
+            {checks.length === 0 ? (
+              <div className="rounded-md border border-dashed px-3 py-3 text-xs text-muted-foreground">
+                Перевірок ще немає. Спочатку створіть їх на вкладці «Перевірки».{' '}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('checks')}
+                  className="text-blue-600 hover:underline"
+                >
+                  Відкрити «Перевірки»
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {checks.map((check) => {
+                  const checked = topicForm.checkIds.includes(check.id);
+                  return (
+                    <label
+                      key={check.id}
+                      className={`flex items-center gap-2 rounded-full border px-3 py-1 text-xs ${
+                        checked ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-3 w-3"
+                        checked={checked}
+                        onChange={() => toggleTopicCheck(check.id)}
+                      />
+                      {check.description}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -2729,6 +2811,16 @@ export default function AdminPage() {
               ))}
             </div>
 
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setResponseDraftVisible((v) => !v)}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                {responseDraftVisible ? 'Приховати форму' : '＋ Додати блок'}
+              </button>
+            </div>
+            {responseDraftVisible && (
             <div className="space-y-2 rounded-md border px-3 py-3">
               <div className="grid gap-2 md:grid-cols-2">
                 <div className="space-y-1">
@@ -2815,6 +2907,7 @@ export default function AdminPage() {
                 Додати блок
               </button>
             </div>
+            )}
           </div>
 
           <button
