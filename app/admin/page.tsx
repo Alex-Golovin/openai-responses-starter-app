@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 type Feedback = {
   type: 'success' | 'error';
@@ -397,6 +398,23 @@ export default function AdminPage() {
     (typeof ADMIN_TABS)[number]['id']
   >('topics');
 
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && ADMIN_TABS.some((t) => t.id === tab)) {
+      setActiveTab(tab as (typeof ADMIN_TABS)[number]['id']);
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (tabId: (typeof ADMIN_TABS)[number]['id']) => {
+    setActiveTab(tabId);
+    const params = new URLSearchParams(Array.from(searchParams.entries()));
+    params.set('tab', tabId);
+    router.replace(`?${params.toString()}`);
+  };
+
   const [reindexing, setReindexing] = useState(false);
   const [updatingTopicId, setUpdatingTopicId] = useState<string | null>(null);
 
@@ -456,15 +474,15 @@ export default function AdminPage() {
       '/api/admin/document-templates',
       { cache: 'no-store' }
     );
-    const normalized = data.map((template) => ({
+    const normalized: DocumentTemplateRecord[] = data.map((template) => ({
       ...template,
       fieldIds: template.fieldIds || [],
       checks: Array.isArray(template.checks)
-        ? template.checks.map((ref) => ({
+        ? (template.checks.map((ref) => ({
             checkId: ref.checkId,
-            mode: ref.mode === 'multi_doc' ? 'multi_doc' : 'single_doc',
-          }))
-        : [],
+            mode: (ref.mode === 'multi_doc' ? 'multi_doc' : 'single_doc') as TemplateCheckMode,
+          })) as DocumentTemplateCheckRecord[])
+        : ([] as DocumentTemplateCheckRecord[]),
     }));
     setTemplates(normalized);
   };
@@ -1531,7 +1549,7 @@ export default function AdminPage() {
           <button
             key={tab.id}
             type="button"
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => handleTabChange(tab.id)}
             className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
               activeTab === tab.id
                 ? 'bg-blue-600 text-white shadow-sm'
@@ -2546,6 +2564,19 @@ export default function AdminPage() {
               placeholder="Що повідомити клієнту, якщо перевірка провалилась"
             />
           </div>
+          {editingCheckId && (
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-sm font-medium">Використовується в шаблонах</label>
+              <p className="text-xs text-muted-foreground">
+                {templates
+                  .filter((template) =>
+                    template.checks?.some((ref) => ref.checkId === editingCheckId)
+                  )
+                  .map((template) => template.name)
+                  .join(', ') || '—'}
+              </p>
+            </div>
+          )}
           <div className="md:col-span-2">
             <button
               type="submit"
