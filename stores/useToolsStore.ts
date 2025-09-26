@@ -65,7 +65,7 @@ interface StoreState {
 
 const useToolsStore = create<StoreState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       vectorStore: defaultVectorStore.id !== "" ? defaultVectorStore : null,
       webSearchConfig: {
         user_location: {
@@ -82,10 +82,10 @@ const useToolsStore = create<StoreState>()(
         skip_approval: true,
       },
       fileSearchEnabled: true,
-      setFileSearchEnabled: () => {
-        set({ fileSearchEnabled: true });
+      setFileSearchEnabled: (enabled = true) => {
+        set({ fileSearchEnabled: enabled });
       },
-      webSearchEnabled: false,
+      webSearchEnabled: true,
       setWebSearchEnabled: (enabled) => {
         set({ webSearchEnabled: enabled });
       },
@@ -115,12 +115,14 @@ const useToolsStore = create<StoreState>()(
         const persisted = (persistedState as Partial<StoreState>) ?? {};
         const merged = { ...currentState, ...persisted } as StoreState;
 
-        if (!merged.vectorStore?.id && defaultVectorStore.id) {
-          merged.vectorStore = defaultVectorStore;
+        merged.vectorStore =
+          defaultVectorStore.id !== "" ? defaultVectorStore : null;
+        if (merged.fileSearchEnabled === undefined) {
+          merged.fileSearchEnabled = true;
         }
-
-        merged.fileSearchEnabled = true;
-        merged.functionsEnabled = false;
+        if (merged.webSearchEnabled === undefined) {
+          merged.webSearchEnabled = true;
+        }
 
         return merged;
       },
