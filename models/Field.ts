@@ -7,16 +7,41 @@ export interface FieldValidator {
   value: unknown;
 }
 
+export interface FieldOption {
+  label: string;
+  value: string;
+}
+
 export interface FieldDocument extends Document {
   key: string;
   label: string;
   type: FieldType;
-  options?: string[];
+  options?: FieldOption[];
   extractHint?: string;
   validators?: FieldValidator[];
   createdAt: Date;
   updatedAt: Date;
 }
+
+const FieldOptionSchema = new Schema<FieldOption>(
+  {
+    label: { type: String, required: true },
+    value: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+const FieldValidatorSchema = new Schema<FieldValidator>(
+  {
+    type: {
+      type: String,
+      enum: ['regex', 'min_length', 'forbid_patterns', 'date_before'],
+      required: true,
+    },
+    value: { type: Schema.Types.Mixed, required: true },
+  },
+  { _id: false }
+);
 
 const FieldSchema = new Schema<FieldDocument>(
   {
@@ -27,9 +52,9 @@ const FieldSchema = new Schema<FieldDocument>(
       enum: ['string', 'number', 'boolean', 'date', 'enum'],
       required: true,
     },
-    options: [String],
+    options: [FieldOptionSchema],
     extractHint: String,
-    validators: [Schema.Types.Mixed],
+    validators: { type: [FieldValidatorSchema], default: [] },
   },
   { timestamps: true }
 );

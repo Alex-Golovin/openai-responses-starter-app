@@ -7,14 +7,30 @@ type Feedback = {
   message: string;
 };
 
+type FieldValidatorType =
+  | 'regex'
+  | 'min_length'
+  | 'forbid_patterns'
+  | 'date_before';
+
+type FieldValidatorRecord = {
+  type: FieldValidatorType;
+  value: unknown;
+};
+
+type FieldOptionRecord = {
+  label: string;
+  value: string;
+};
+
 type FieldRecord = {
   id: string;
   key: string;
   label: string;
   type: 'string' | 'number' | 'boolean' | 'date' | 'enum';
-  options?: string[];
+  options?: FieldOptionRecord[];
   extractHint?: string;
-  validators?: Record<string, unknown>[];
+  validators?: FieldValidatorRecord[];
 };
 
 type DocumentTemplateRecord = {
@@ -97,8 +113,8 @@ type TopicRecord = {
 const ADMIN_TABS = [
   { id: 'topics', label: 'Теми' },
   { id: 'documentTemplates', label: 'Шаблони документів' },
-  { id: 'fields', label: 'Поля' },
   { id: 'checks', label: 'Перевірки' },
+  { id: 'fields', label: 'Поля' },
 ] as const;
 
 const CHECK_RULE_OPERATORS: { value: CheckRuleRecord['operator']; label: string }[] = [
@@ -119,13 +135,39 @@ const OPERATORS_WITHOUT_VALUE: ReadonlyArray<CheckRuleRecord['operator']> = [
   'is_missing',
 ];
 
+const FIELD_TYPE_LABELS: Record<FieldRecord['type'], string> = {
+  string: 'Текст',
+  number: 'Число',
+  boolean: 'Так/ні',
+  date: 'Дата',
+  enum: 'Список значень',
+};
+
+const CHECK_TYPE_LABELS: Record<CheckRecord['type'], string> = {
+  single_doc: 'Один документ',
+  cross_doc: 'Порівняння документів',
+};
+
+const CHECK_SEVERITY_LABELS: Record<CheckRecord['severity'], string> = {
+  low: 'Низька',
+  medium: 'Середня',
+  high: 'Висока',
+};
+
+const FIELD_VALIDATOR_OPTIONS: { value: FieldValidatorType; label: string }[] = [
+  { value: 'regex', label: 'Відповідає регулярному виразу' },
+  { value: 'min_length', label: 'Мінімальна кількість символів' },
+  { value: 'forbid_patterns', label: 'Заборонені фрази/патерни' },
+  { value: 'date_before', label: 'Дата має бути до' },
+];
+
 type FieldFormState = {
   key: string;
   label: string;
   type: FieldRecord['type'];
-  options: string[];
+  options: FieldOptionForm[];
   extractHint: string;
-  validatorsText: string;
+  validators: FieldValidatorForm[];
 };
 
 type TemplateFormState = {
@@ -142,6 +184,19 @@ type CheckFormState = {
   onFail: string;
   rules: CheckRuleForm[];
   ruleDraft: CheckRuleDraft;
+};
+
+type FieldOptionForm = {
+  id: string;
+  label: string;
+  value: string;
+  isEditable: boolean;
+};
+
+type FieldValidatorForm = {
+  id: string;
+  type: FieldValidatorType;
+  value: string;
 };
 
 type TopicResponseBlockDraft = {
@@ -169,7 +224,7 @@ const createEmptyFieldForm = (): FieldFormState => ({
   type: 'string',
   options: [],
   extractHint: '',
-  validatorsText: '[]',
+  validators: [],
 });
 
 const createEmptyTemplateForm = (): TemplateFormState => ({
@@ -195,6 +250,68 @@ const createEmptyRuleDraft = (templateId = ''): CheckRuleDraft => ({
   value: '',
   message: '',
 });
+
+const CYRILLIC_TO_LATIN_MAP: Record<string, string> = {
+  а: 'a',
+  б: 'b',
+  в: 'v',
+  г: 'h',
+  ґ: 'g',
+  д: 'd',
+  е: 'e',
+  є: 'ie',
+  ж: 'zh',
+  з: 'z',
+  и: 'y',
+  і: 'i',
+  ї: 'i',
+  й: 'i',
+  к: 'k',
+  л: 'l',
+  м: 'm',
+  н: 'n',
+  о: 'o',
+  п: 'p',
+  р: 'r',
+  с: 's',
+  т: 't',
+  у: 'u',
+  ф: 'f',
+  х: 'kh',
+  ц: 'ts',
+  ч: 'ch',
+  ш: 'sh',
+  щ: 'shch',
+  ь: '',
+  ю: 'iu',
+  я: 'ia',
+};
+
+const slugify = (input: string): string => {
+  const lower = input.trim().toLowerCase();
+  let result = '';
+  for (const char of lower) {
+    if (/[a-z0-9]/.test(char)) {
+      result += char;
+    } else if (CYRILLIC_TO_LATIN_MAP[char]) {
+      result += CYRILLIC_TO_LATIN_MAP[char];
+    } else if (char === ' ' || char === '-' || char === '_') {
+      result += '-';
+    }
+  }
+  result = result.replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return result || 'item';
+};
+
+const makeUniqueSlug = (base: string, existing: Set<string>): string => {
+  let candidate = base;
+  let counter = 2;
+  while (existing.has(candidate)) {
+    candidate = `${base}-${counter}`;
+    counter += 1;
+  }
+  return candidate;
+};
 
 const createEmptyTopicForm = (): TopicFormState => ({
   title: '',
@@ -242,6 +359,7 @@ export default function AdminPage() {
   );
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [fieldSubmitting, setFieldSubmitting] = useState(false);
+  const [fieldFormVisible, setFieldFormVisible] = useState(false);
 
   const [templates, setTemplates] = useState<DocumentTemplateRecord[]>([]);
   const [templateForm, setTemplateForm] = useState<TemplateFormState>(() =>
@@ -250,6 +368,7 @@ export default function AdminPage() {
   const [editingTemplateId, setEditingTemplateId] =
     useState<string | null>(null);
   const [templateSubmitting, setTemplateSubmitting] = useState(false);
+  const [templateFormVisible, setTemplateFormVisible] = useState(false);
 
   const [checks, setChecks] = useState<CheckRecord[]>([]);
   const [checkForm, setCheckForm] = useState<CheckFormState>(() =>
@@ -257,6 +376,7 @@ export default function AdminPage() {
   );
   const [editingCheckId, setEditingCheckId] = useState<string | null>(null);
   const [checkSubmitting, setCheckSubmitting] = useState(false);
+  const [checkFormVisible, setCheckFormVisible] = useState(false);
 
   const [topics, setTopics] = useState<TopicRecord[]>([]);
   const [topicForm, setTopicForm] = useState<TopicFormState>(() =>
@@ -264,6 +384,7 @@ export default function AdminPage() {
   );
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const [topicSubmitting, setTopicSubmitting] = useState(false);
+  const [topicFormVisible, setTopicFormVisible] = useState(false);
 
   const [activeTab, setActiveTab] = useState<
     (typeof ADMIN_TABS)[number]['id']
@@ -276,6 +397,26 @@ export default function AdminPage() {
 
   const showSuccess = (message: string) => setFeedback({ type: 'success', message });
   const showError = (message: string) => setFeedback({ type: 'error', message });
+
+  const resetFieldFormState = () => {
+    setFieldForm(createEmptyFieldForm());
+    setEditingFieldId(null);
+  };
+
+  const resetTemplateFormState = () => {
+    setTemplateForm(createEmptyTemplateForm());
+    setEditingTemplateId(null);
+  };
+
+  const resetCheckFormState = () => {
+    setCheckForm(createEmptyCheckForm());
+    setEditingCheckId(null);
+  };
+
+  const resetTopicFormState = () => {
+    setTopicForm(createEmptyTopicForm());
+    setEditingTopicId(null);
+  };
 
   const loadFields = async () => {
     const data = await fetchJson<FieldRecord[]>('/api/admin/fields', {
@@ -487,6 +628,14 @@ export default function AdminPage() {
         return 'Ні';
       }
     }
+    if (field?.type === 'enum' && field.options) {
+      const match = field.options.find(
+        (option) => option.value === value || option.label === value
+      );
+      if (match) {
+        return match.label;
+      }
+    }
     if (typeof value === 'string') {
       return value;
     }
@@ -504,38 +653,132 @@ export default function AdminPage() {
     }
   };
 
+  const formatValidatorValueForInput = (
+    validator: FieldValidatorRecord
+  ): string => {
+    if (validator.value === undefined || validator.value === null) {
+      return '';
+    }
+    if (Array.isArray(validator.value)) {
+      return validator.value.join('\n');
+    }
+    if (typeof validator.value === 'number') {
+      return String(validator.value);
+    }
+    return String(validator.value);
+  };
+
   const handleFieldSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     clearFeedback();
 
-    let validators: Record<string, unknown>[] = [];
-    if (fieldForm.validatorsText.trim()) {
-      try {
-        validators = JSON.parse(fieldForm.validatorsText);
-        if (!Array.isArray(validators)) {
-          throw new Error('Validators should be an array');
-        }
-      } catch (error) {
-        showError(`Помилка парсингу validators: ${(error as Error).message}`);
-        return;
+    const isEditing = Boolean(editingFieldId);
+
+    if (!fieldForm.label.trim()) {
+      showError('Вкажіть назву поля');
+      return;
+    }
+
+    const existingKeys = new Set(fields.map((field) => field.key));
+    if (isEditing && editingFieldId) {
+      const current = fields.find((field) => field.id === editingFieldId);
+      if (current) {
+        existingKeys.delete(current.key);
       }
     }
 
-    const options = Array.from(
-      new Set(
-        fieldForm.options
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0)
-      )
-    );
+    if (!fieldForm.key) {
+      showError('Не вдалося згенерувати ключ поля');
+      return;
+    }
+
+    if (existingKeys.has(fieldForm.key)) {
+      showError('Поле з таким ключем вже існує. Змініть назву.');
+      return;
+    }
+
+    let optionsPayload: FieldOptionRecord[] | undefined;
+    if (fieldForm.type === 'enum') {
+      const prepared = fieldForm.options
+        .map((option) => ({
+          label: option.label.trim(),
+          value: option.value,
+          isEditable: option.isEditable,
+        }))
+        .filter((option) => option.label.length > 0);
+
+      if (prepared.length === 0) {
+        showError('Додайте принаймні один варіант для списку значень');
+        return;
+      }
+
+      const valueSet = new Set<string>();
+      for (const option of prepared) {
+        if (!option.value) {
+          showError('Не вдалося згенерувати ідентифікатор для варіанту');
+          return;
+        }
+        if (valueSet.has(option.value)) {
+          showError('Варіанти списку мають бути унікальними');
+          return;
+        }
+        valueSet.add(option.value);
+      }
+
+      optionsPayload = prepared.map(({ label, value }) => ({ label, value }));
+    }
+
+    const validatorsPayload: FieldValidatorRecord[] = [];
+    for (let index = 0; index < fieldForm.validators.length; index += 1) {
+      const validator = fieldForm.validators[index];
+      const trimmedValue = validator.value.trim();
+
+      if (!trimmedValue) {
+        showError(`Вкажіть значення для валідації №${index + 1}`);
+        return;
+      }
+
+      switch (validator.type) {
+        case 'regex':
+          validatorsPayload.push({ type: validator.type, value: trimmedValue });
+          break;
+        case 'min_length': {
+          const parsed = Number(trimmedValue);
+          if (!Number.isFinite(parsed) || parsed < 0) {
+            showError(`Мінімальна довжина у валідації №${index + 1} має бути невід'ємним числом`);
+            return;
+          }
+          validatorsPayload.push({ type: validator.type, value: parsed });
+          break;
+        }
+        case 'forbid_patterns': {
+          const patterns = trimmedValue
+            .split('\n')
+            .map((item) => item.trim())
+            .filter((item) => item.length > 0);
+          if (patterns.length === 0) {
+            showError(`Додайте хоча б один заборонений патерн у валідації №${index + 1}`);
+            return;
+          }
+          validatorsPayload.push({ type: validator.type, value: patterns });
+          break;
+        }
+        case 'date_before':
+          validatorsPayload.push({ type: validator.type, value: trimmedValue });
+          break;
+        default:
+          showError(`Невідомий тип валідації у правилі №${index + 1}`);
+          return;
+      }
+    }
 
     const payload = {
       key: fieldForm.key.trim(),
       label: fieldForm.label.trim(),
       type: fieldForm.type,
-      options: options.length > 0 ? options : undefined,
+      options: optionsPayload,
       extractHint: fieldForm.extractHint.trim() || undefined,
-      validators: validators.length > 0 ? validators : undefined,
+      validators: validatorsPayload.length > 0 ? validatorsPayload : undefined,
     };
 
     setFieldSubmitting(true);
@@ -556,8 +799,8 @@ export default function AdminPage() {
         showSuccess('Поле створено');
       }
       await loadFields();
-      setFieldForm(createEmptyFieldForm());
-      setEditingFieldId(null);
+      resetFieldFormState();
+      setFieldFormVisible(false);
     } catch (error) {
       showError((error as Error).message);
     } finally {
@@ -568,13 +811,23 @@ export default function AdminPage() {
   const handleFieldEdit = (field: FieldRecord) => {
     clearFeedback();
     setEditingFieldId(field.id);
+    setFieldFormVisible(true);
     setFieldForm({
       key: field.key,
       label: field.label,
       type: field.type,
-      options: [...(field.options || [])],
+      options: (field.options || []).map((option) => ({
+        id: `${field.id}-${option.value}`,
+        label: option.label,
+        value: option.value,
+        isEditable: false,
+      })),
       extractHint: field.extractHint || '',
-      validatorsText: JSON.stringify(field.validators || [], null, 2),
+      validators: (field.validators || []).map((validator, index) => ({
+        id: `${field.id}-validator-${index}`,
+        type: validator.type,
+        value: formatValidatorValueForInput(validator),
+      })),
     });
   };
 
@@ -592,16 +845,44 @@ export default function AdminPage() {
   const addFieldOption = () => {
     setFieldForm((prev) => ({
       ...prev,
-      options: [...prev.options, ''],
+      options: [
+        ...prev.options,
+        {
+          id: generateRuleId(),
+          label: '',
+          value: '',
+          isEditable: true,
+        },
+      ],
     }));
   };
 
   const updateFieldOption = (index: number, value: string) => {
+    const trimmed = value;
     setFieldForm((prev) => ({
       ...prev,
-      options: prev.options.map((option, idx) =>
-        idx === index ? value : option
-      ),
+      options: prev.options.map((option, idx) => {
+        if (idx !== index) {
+          return option;
+        }
+        if (!option.isEditable) {
+          return option;
+        }
+
+        const baseSlug = slugify(trimmed);
+        const existingValues = new Set(
+          prev.options
+            .filter((_, optionIdx) => optionIdx !== index)
+            .map((opt) => opt.value)
+        );
+        const uniqueSlug = baseSlug ? makeUniqueSlug(baseSlug, existingValues) : '';
+
+        return {
+          ...option,
+          label: trimmed,
+          value: uniqueSlug,
+        };
+      }),
     }));
   };
 
@@ -609,6 +890,56 @@ export default function AdminPage() {
     setFieldForm((prev) => ({
       ...prev,
       options: prev.options.filter((_, idx) => idx !== index),
+    }));
+  };
+
+  const addFieldValidator = () => {
+    setFieldForm((prev) => ({
+      ...prev,
+      validators: [
+        ...prev.validators,
+        {
+          id: generateRuleId(),
+          type: 'regex',
+          value: '',
+        },
+      ],
+    }));
+  };
+
+  const updateFieldValidatorType = (index: number, type: FieldValidatorType) => {
+    setFieldForm((prev) => ({
+      ...prev,
+      validators: prev.validators.map((validator, idx) =>
+        idx === index
+          ? {
+              ...validator,
+              type,
+              value: '',
+            }
+          : validator
+      ),
+    }));
+  };
+
+  const updateFieldValidatorValue = (index: number, value: string) => {
+    setFieldForm((prev) => ({
+      ...prev,
+      validators: prev.validators.map((validator, idx) =>
+        idx === index
+          ? {
+              ...validator,
+              value,
+            }
+          : validator
+      ),
+    }));
+  };
+
+  const removeFieldValidator = (index: number) => {
+    setFieldForm((prev) => ({
+      ...prev,
+      validators: prev.validators.filter((_, idx) => idx !== index),
     }));
   };
 
@@ -651,8 +982,8 @@ export default function AdminPage() {
         showSuccess('Шаблон документа створено');
       }
       await Promise.all([loadTemplates(), loadFields()]);
-      setTemplateForm(createEmptyTemplateForm());
-      setEditingTemplateId(null);
+      resetTemplateFormState();
+      setTemplateFormVisible(false);
     } catch (error) {
       showError((error as Error).message);
     } finally {
@@ -663,6 +994,7 @@ export default function AdminPage() {
   const handleTemplateEdit = (template: DocumentTemplateRecord) => {
     clearFeedback();
     setEditingTemplateId(template.id);
+    setTemplateFormVisible(true);
     setTemplateForm({
       name: template.name,
       fieldIds: template.fieldIds || [],
@@ -783,8 +1115,8 @@ export default function AdminPage() {
         showSuccess('Перевірку створено');
       }
       await Promise.all([loadChecks(), loadTopics()]);
-      setCheckForm(createEmptyCheckForm());
-      setEditingCheckId(null);
+      resetCheckFormState();
+      setCheckFormVisible(false);
     } catch (error) {
       showError((error as Error).message);
     } finally {
@@ -795,6 +1127,7 @@ export default function AdminPage() {
   const handleCheckEdit = (check: CheckRecord) => {
     clearFeedback();
     setEditingCheckId(check.id);
+    setCheckFormVisible(true);
     setCheckForm({
       description: check.description,
       type: check.type,
@@ -880,8 +1213,8 @@ export default function AdminPage() {
         showSuccess('Тему створено');
       }
       await loadTopics();
-      setTopicForm(createEmptyTopicForm());
-      setEditingTopicId(null);
+      resetTopicFormState();
+      setTopicFormVisible(false);
     } catch (error) {
       showError((error as Error).message);
     } finally {
@@ -892,6 +1225,7 @@ export default function AdminPage() {
   const handleTopicEdit = (topic: TopicRecord) => {
     clearFeedback();
     setEditingTopicId(topic.id);
+    setTopicFormVisible(true);
     setTopicForm({
       title: topic.title,
       tagsInput: (topic.tags || []).join(', '),
@@ -1157,7 +1491,7 @@ export default function AdminPage() {
         '/api/knowledge/reindex',
         { method: 'POST' }
       );
-      showSuccess(result?.message || 'Reindex запущено');
+      showSuccess(result?.message || 'Перебудову запущено');
     } catch (error) {
       showError((error as Error).message);
     } finally {
@@ -1216,7 +1550,7 @@ export default function AdminPage() {
           disabled={reindexing}
           className="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {reindexing ? 'Запуск…' : 'Reindex knowledge'}
+          {reindexing ? 'Запуск…' : 'Перебудувати базу знань'}
         </button>
       </header>
 
@@ -1255,28 +1589,41 @@ export default function AdminPage() {
         }`}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Fields</h2>
-          {editingFieldId && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditingFieldId(null);
-                setFieldForm(createEmptyFieldForm());
-              }}
-              className="text-sm text-blue-600 hover:underline"
-            >
-              Скасувати редагування
-            </button>
-          )}
+          <h2 className="text-xl font-semibold">Поля</h2>
+          <div className="flex gap-2">
+            {fieldFormVisible ? (
+              <button
+                type="button"
+                onClick={() => {
+                  resetFieldFormState();
+                  setFieldFormVisible(false);
+                }}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                {editingFieldId ? 'Скасувати редагування' : 'Приховати форму'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  resetFieldFormState();
+                  setFieldFormVisible(true);
+                }}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                Створити поле
+              </button>
+            )}
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-3 py-2 text-left font-medium text-gray-700">Key</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-700">Label</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-700">Type</th>
-                <th className="px-3 py-2 text-left font-medium text-gray-700">Validators</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Ключ</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Назва</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Тип</th>
+                <th className="px-3 py-2 text-left font-medium text-gray-700">Валідації</th>
                 <th className="px-3 py-2 text-right font-medium text-gray-700">Дії</th>
               </tr>
             </thead>
@@ -1285,10 +1632,10 @@ export default function AdminPage() {
                 <tr key={field.id}>
                   <td className="px-3 py-2 font-mono text-xs">{field.key}</td>
                   <td className="px-3 py-2">{field.label}</td>
-                  <td className="px-3 py-2 capitalize">{field.type}</td>
+                  <td className="px-3 py-2">{FIELD_TYPE_LABELS[field.type]}</td>
                   <td className="px-3 py-2 text-xs text-gray-500">
                     {field.validators && field.validators.length > 0
-                      ? `${field.validators.length} rules`
+                      ? `${field.validators.length} правил`
                       : '—'}
                   </td>
                   <td className="px-3 py-2 text-right">
@@ -1315,52 +1662,74 @@ export default function AdminPage() {
           </table>
         </div>
 
-        <form onSubmit={handleFieldSubmit} className="grid gap-4 md:grid-cols-2">
+        {fieldFormVisible && (
+          <form onSubmit={handleFieldSubmit} className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1">
-            <label className="text-sm font-medium">Key</label>
-            <input
-              required
-              value={fieldForm.key}
-              onChange={(event) =>
-                setFieldForm((prev) => ({ ...prev, key: event.target.value }))
-              }
-              className="w-full rounded-md border px-3 py-2 text-sm"
-              placeholder="passport_number"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Label</label>
+            <label className="text-sm font-medium">Назва поля</label>
             <input
               required
               value={fieldForm.label}
-              onChange={(event) =>
-                setFieldForm((prev) => ({ ...prev, label: event.target.value }))
-              }
-              className="w-full rounded-md border px-3 py-2 text-sm"
-              placeholder="Номер паспорта"
+              onChange={(event) => {
+                const nextLabel = event.target.value;
+                setFieldForm((prev) => {
+                  const nextState = { ...prev, label: nextLabel };
+                  if (!editingFieldId) {
+                    const baseSlug = slugify(nextLabel);
+                    const existingKeys = new Set(fields.map((field) => field.key));
+                    const uniqueSlug = baseSlug
+                      ? makeUniqueSlug(baseSlug, existingKeys)
+                      : '';
+                    nextState.key = uniqueSlug;
+                  }
+                  return nextState;
+                });
+              }}
+              disabled={Boolean(editingFieldId)}
+              className="w-full rounded-md border px-3 py-2 text-sm disabled:bg-gray-100"
+              placeholder="Наприклад: Номер паспорта"
             />
+            {editingFieldId && (
+              <p className="text-[11px] text-muted-foreground">
+                Змінити назву можна лише створивши нове поле.
+              </p>
+            )}
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">Type</label>
+            <label className="text-sm font-medium">Системний ключ</label>
+            <div className="rounded-md border bg-gray-50 px-3 py-2 text-sm font-mono text-gray-600">
+              {fieldForm.key || '—'}
+            </div>
+            {!editingFieldId && (
+              <p className="text-[11px] text-muted-foreground">
+                Генерується автоматично за назвою поля.
+              </p>
+            )}
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-medium">Тип</label>
             <select
               value={fieldForm.type}
               onChange={(event) =>
-                setFieldForm((prev) => ({
-                  ...prev,
-                  type: event.target.value as FieldRecord['type'],
-                }))
+                setFieldForm((prev) => {
+                  const nextType = event.target.value as FieldRecord['type'];
+                  return {
+                    ...prev,
+                    type: nextType,
+                    options: nextType === 'enum' ? prev.options : [],
+                  };
+                })
               }
               className="w-full rounded-md border px-3 py-2 text-sm"
             >
               {fieldTypeOptions.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {FIELD_TYPE_LABELS[option]}
                 </option>
               ))}
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">Extract hint</label>
+            <label className="text-sm font-medium">Підказка для моделі (необовʼязково)</label>
             <input
               value={fieldForm.extractHint}
               onChange={(event) =>
@@ -1370,58 +1739,175 @@ export default function AdminPage() {
                 }))
               }
               className="w-full rounded-md border px-3 py-2 text-sm"
-              placeholder="Підказка для моделі"
+              placeholder="Наприклад: Вкажіть ПІБ з документу"
             />
           </div>
-          <div className="space-y-1 md:col-span-1">
-            <label className="text-sm font-medium">Опції (для enum)</label>
-            <div className="space-y-2">
-              {fieldForm.options.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  Додайте варіанти, якщо поле має фіксований перелік значень.
-                </p>
-              ) : (
-                fieldForm.options.map((option, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <input
-                      value={option}
-                      onChange={(event) =>
-                        updateFieldOption(index, event.target.value)
-                      }
-                      className="flex-1 rounded-md border px-3 py-2 text-sm"
-                      placeholder={`Варіант ${index + 1}`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeFieldOption(index)}
-                      className="text-xs text-red-600 hover:underline"
-                    >
-                      Видалити
-                    </button>
-                  </div>
-                ))
-              )}
+          {fieldForm.type === 'enum' && (
+            <div className="space-y-1 md:col-span-1">
+              <label className="text-sm font-medium">Варіанти списку</label>
+              <div className="space-y-2">
+                {fieldForm.options.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Додайте варіанти, якщо поле має фіксований перелік значень.
+                  </p>
+                ) : (
+                  fieldForm.options.map((option, index) => (
+                    <div key={option.id} className="space-y-1 rounded-md border px-3 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 space-y-1">
+                          {option.isEditable ? (
+                            <input
+                              value={option.label}
+                              onChange={(event) =>
+                                updateFieldOption(index, event.target.value)
+                              }
+                              className="w-full rounded-md border px-3 py-2 text-sm"
+                              placeholder={`Варіант ${index + 1}`}
+                            />
+                          ) : (
+                            <p className="text-sm font-medium">{option.label}</p>
+                          )}
+                          <p className="text-[11px] text-muted-foreground">
+                            Системний ключ:{' '}
+                            <span className="font-mono">{option.value || '—'}</span>
+                          </p>
+                          {!option.isEditable && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Щоб змінити назву, видаліть варіант та створіть новий.
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeFieldOption(index)}
+                          className="text-xs text-red-600 hover:underline"
+                        >
+                          Видалити
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+                <button
+                  type="button"
+                  onClick={addFieldOption}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  Додати опцію
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="space-y-2 md:col-span-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Валідації</label>
               <button
                 type="button"
-                onClick={addFieldOption}
+                onClick={addFieldValidator}
                 className="text-xs text-blue-600 hover:underline"
               >
-                Додати опцію
+                Додати правило
               </button>
             </div>
-          </div>
-          <div className="space-y-1 md:col-span-1">
-            <label className="text-sm font-medium">Validators (JSON)</label>
-            <textarea
-              value={fieldForm.validatorsText}
-              onChange={(event) =>
-                setFieldForm((prev) => ({
-                  ...prev,
-                  validatorsText: event.target.value,
-                }))
-              }
-              className="h-24 w-full rounded-md border px-3 py-2 text-sm font-mono"
-            />
+            {fieldForm.validators.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Додайте правила валідації, якщо потрібно обмежити значення поля.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {fieldForm.validators.map((validator, index) => (
+                  <div
+                    key={validator.id}
+                    className="space-y-2 rounded-md border px-3 py-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 space-y-2">
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium">Тип</label>
+                            <select
+                              value={validator.type}
+                              onChange={(event) =>
+                                updateFieldValidatorType(
+                                  index,
+                                  event.target.value as FieldValidatorType
+                                )
+                              }
+                              className="w-full rounded-md border px-3 py-2 text-sm"
+                            >
+                              {FIELD_VALIDATOR_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium">Значення</label>
+                            {validator.type === 'min_length' ? (
+                              <input
+                                type="number"
+                                min={0}
+                                value={validator.value}
+                                onChange={(event) =>
+                                  updateFieldValidatorValue(index, event.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2 text-sm"
+                                placeholder="Наприклад, 3"
+                              />
+                            ) : validator.type === 'forbid_patterns' ? (
+                              <textarea
+                                value={validator.value}
+                                onChange={(event) =>
+                                  updateFieldValidatorValue(index, event.target.value)
+                                }
+                                className="h-24 w-full rounded-md border px-3 py-2 text-sm"
+                                placeholder={'Фраза 1\nФраза 2'}
+                              />
+                            ) : validator.type === 'date_before' ? (
+                              <input
+                                type="date"
+                                value={validator.value}
+                                onChange={(event) =>
+                                  updateFieldValidatorValue(index, event.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2 text-sm"
+                              />
+                            ) : (
+                              <input
+                                value={validator.value}
+                                onChange={(event) =>
+                                  updateFieldValidatorValue(index, event.target.value)
+                                }
+                                className="w-full rounded-md border px-3 py-2 text-sm"
+                                placeholder="Наприклад, ^[A-Z0-9]+$"
+                              />
+                            )}
+                          </div>
+                        </div>
+                        {validator.type === 'regex' && (
+                          <p className="text-[11px] text-muted-foreground">
+                            Використовуйте синтаксис JavaScript RegExp.
+                          </p>
+                        )}
+                        {validator.type === 'forbid_patterns' && (
+                          <p className="text-[11px] text-muted-foreground">
+                            Кожен рядок буде розцінений як окремий заборонений патерн.
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeFieldValidator(index)}
+                        className="text-xs text-red-600 hover:underline"
+                      >
+                        Видалити
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="md:col-span-2">
             <button
@@ -1436,7 +1922,8 @@ export default function AdminPage() {
                 : 'Створити поле'}
             </button>
           </div>
-        </form>
+          </form>
+        )}
       </section>
 
       <section
@@ -1445,19 +1932,32 @@ export default function AdminPage() {
         }`}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Document Templates</h2>
-          {editingTemplateId && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditingTemplateId(null);
-                setTemplateForm(createEmptyTemplateForm());
-              }}
-              className="text-sm text-blue-600 hover:underline"
-            >
-              Скасувати редагування
-            </button>
-          )}
+          <h2 className="text-xl font-semibold">Шаблони документів</h2>
+          <div className="flex gap-2">
+            {templateFormVisible ? (
+              <button
+                type="button"
+                onClick={() => {
+                  resetTemplateFormState();
+                  setTemplateFormVisible(false);
+                }}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                {editingTemplateId ? 'Скасувати редагування' : 'Приховати форму'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  resetTemplateFormState();
+                  setTemplateFormVisible(true);
+                }}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                Створити шаблон
+              </button>
+            )}
+          </div>
         </div>
         <div className="space-y-2">
           {templates.length === 0 ? (
@@ -1497,7 +1997,8 @@ export default function AdminPage() {
           )}
         </div>
 
-        <form onSubmit={handleTemplateSubmit} className="space-y-4">
+        {templateFormVisible && (
+          <form onSubmit={handleTemplateSubmit} className="space-y-4">
           <div className="space-y-1">
             <label className="text-sm font-medium">Назва шаблону</label>
             <input
@@ -1546,7 +2047,8 @@ export default function AdminPage() {
               : 'Створити шаблон'}
           </button>
         </form>
-      </section>
+        )}
+     </section>
 
       <section
         className={`space-y-4 rounded-lg border bg-white p-6 shadow-sm ${
@@ -1554,19 +2056,32 @@ export default function AdminPage() {
         }`}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Checks</h2>
-          {editingCheckId && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditingCheckId(null);
-                setCheckForm(createEmptyCheckForm());
-              }}
-              className="text-sm text-blue-600 hover:underline"
-            >
-              Скасувати редагування
-            </button>
-          )}
+          <h2 className="text-xl font-semibold">Перевірки</h2>
+          <div className="flex gap-2">
+            {checkFormVisible ? (
+              <button
+                type="button"
+                onClick={() => {
+                  resetCheckFormState();
+                  setCheckFormVisible(false);
+                }}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                {editingCheckId ? 'Скасувати редагування' : 'Приховати форму'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  resetCheckFormState();
+                  setCheckFormVisible(true);
+                }}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                Створити перевірку
+              </button>
+            )}
+          </div>
         </div>
         <div className="space-y-2">
           {checks.length === 0 ? (
@@ -1581,7 +2096,7 @@ export default function AdminPage() {
                   <div>
                     <p className="font-medium">{check.description}</p>
                     <p className="text-xs text-muted-foreground">
-                      {check.type} · severity: {check.severity}
+                      {CHECK_TYPE_LABELS[check.type]} · {CHECK_SEVERITY_LABELS[check.severity]}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -1606,7 +2121,8 @@ export default function AdminPage() {
           )}
         </div>
 
-        <form onSubmit={handleCheckSubmit} className="grid gap-4 md:grid-cols-2">
+        {checkFormVisible && (
+          <form onSubmit={handleCheckSubmit} className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1 md:col-span-2">
             <label className="text-sm font-medium">Опис</label>
             <input
@@ -1652,13 +2168,13 @@ export default function AdminPage() {
             >
               {checkTypeOptions.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {CHECK_TYPE_LABELS[option]}
                 </option>
               ))}
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">Severity</label>
+            <label className="text-sm font-medium">Критичність</label>
             <select
               value={checkForm.severity}
               onChange={(event) =>
@@ -1671,7 +2187,7 @@ export default function AdminPage() {
             >
               {checkSeverityOptions.map((option) => (
                 <option key={option} value={option}>
-                  {option}
+                  {CHECK_SEVERITY_LABELS[option]}
                 </option>
               ))}
             </select>
@@ -1925,8 +2441,8 @@ export default function AdminPage() {
                       >
                         <option value="">Оберіть значення</option>
                         {ruleBuilderFieldOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
+                          <option key={option.value} value={option.value}>
+                            {option.label}
                           </option>
                         ))}
                       </select>
@@ -2039,7 +2555,8 @@ export default function AdminPage() {
                 : 'Створити перевірку'}
             </button>
           </div>
-        </form>
+          </form>
+        )}
       </section>
 
       <section
@@ -2048,19 +2565,32 @@ export default function AdminPage() {
         }`}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Topics</h2>
-          {editingTopicId && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditingTopicId(null);
-                setTopicForm(createEmptyTopicForm());
-              }}
-              className="text-sm text-blue-600 hover:underline"
-            >
-              Скасувати редагування
-            </button>
-          )}
+          <h2 className="text-xl font-semibold">Теми</h2>
+          <div className="flex gap-2">
+            {topicFormVisible ? (
+              <button
+                type="button"
+                onClick={() => {
+                  resetTopicFormState();
+                  setTopicFormVisible(false);
+                }}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                {editingTopicId ? 'Скасувати редагування' : 'Приховати форму'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  resetTopicFormState();
+                  setTopicFormVisible(true);
+                }}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                Створити тему
+              </button>
+            )}
+          </div>
         </div>
         <div className="space-y-3">
           {topics.length === 0 ? (
@@ -2119,7 +2649,8 @@ export default function AdminPage() {
           )}
         </div>
 
-        <form onSubmit={handleTopicSubmit} className="space-y-6">
+        {topicFormVisible && (
+          <form onSubmit={handleTopicSubmit} className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1">
               <label className="text-sm font-medium">Назва теми</label>
@@ -2501,7 +3032,8 @@ export default function AdminPage() {
               ? 'Оновити тему'
               : 'Створити тему'}
           </button>
-        </form>
+          </form>
+        )}
       </section>
     </div>
   );
