@@ -145,7 +145,7 @@ Chat UI
 
 	•	Источник правды: MongoDB (Topics, Document Templates, Fields, Checks). У Vector Store хранится только текстовая база знаний (FAQ, чек-листы, правила/пояснения, анти-патерни) с metadata: { topicId, kind, title }.
 	•	Стратегия на MVP:
-		– Працюємо з одним Vector Store (`vs_68d58c14130081919fa83aeee14f6a7d`); id зберігаємо в конфігурації (env/константа).
+		– Працюємо з одним Vector Store (`vs_68d6964faf34819190a9516f4ecbf196`); id зберігаємо в конфігурації (env/константа).
 		– Перебудова knowledge: `buildChunksFromMongo` формує чанки та одразу аплоудить їх у Vector Store через `POST /api/knowledge/reindex` (без проміжного knowledge.jsonl).
 		– Чанкер: 300–800 токенів; без зайвого шуму; українською. Метадані кожного чанка: { topicId, kind: 'faq'|'checklist'|'rule'|'pattern', title }.
 	•	Генерация чанков (buildChunksFromTopic):
@@ -246,7 +246,7 @@ Chat UI
 	•	[x] Перевірити локальний запуск стартера та File Search панель
 
 Етап 1. База знань та векторне сховище
-	•	[x] Додати конфіг для Vector Store (`VECTOR_STORE_ID=vs_68d58c14130081919fa83aeee14f6a7d`) і прокинути id у File Search/рантайм
+	•	[x] Додати конфіг для Vector Store (`VECTOR_STORE_ID=vs_68d6964faf34819190a9516f4ecbf196`) і прокинути id у File Search/рантайм
 	•	[x] Реалізувати `buildChunksFromMongo`: формуємо FAQ/чек-листи/правила/антипатерни з Mongo
 	•	[x] Реалізувати `POST /api/knowledge/reindex` — повний апдейт Vector Store з Mongo
 	•	[x] Реалізувати `POST /api/knowledge/upsert-topic/:id` — апдейт однієї теми

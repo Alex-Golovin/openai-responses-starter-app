@@ -5,11 +5,10 @@ import { Check } from '@/models/Check';
 import { DocumentTemplate } from '@/models/DocumentTemplate';
 import { serializeDocument } from '@/app/api/admin/utils';
 
-interface RouteParams {
-  params: { id: string };
-}
-
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
     await connectToDatabase();
     const payload = await request.json();
@@ -41,7 +40,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
     await connectToDatabase();
     const check = await Check.findByIdAndDelete(params.id);
