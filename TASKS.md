@@ -246,9 +246,9 @@ Chat UI
 
 Етап 1. База знань та векторне сховище
 	•	[x] Додати конфіг для Vector Store (`VECTOR_STORE_ID=vs_68d58c14130081919fa83aeee14f6a7d`) і прокинути id у File Search/рантайм
-	•	[ ] Реалізувати `buildChunksFromMongo`: формуємо FAQ/чек-листи/правила/антипатерни з Mongo
-	•	[ ] Реалізувати `POST /api/knowledge/reindex` — повний апдейт Vector Store з Mongo
-	•	[ ] Реалізувати `POST /api/knowledge/upsert-topic/:id` — апдейт однієї теми
+	•	[x] Реалізувати `buildChunksFromMongo`: формуємо FAQ/чек-листи/правила/антипатерни з Mongo
+	•	[x] Реалізувати `POST /api/knowledge/reindex` — повний апдейт Vector Store з Mongo
+	•	[x] Реалізувати `POST /api/knowledge/upsert-topic/:id` — апдейт однієї теми
 	•	[ ] Ручна перевірка: додати тестові записи в Mongo (через Compass/скрипт) і переконатися, що File Search повертає цитати після reindex
 
 Етап 2. Моделі MongoDB та адмін-UI
@@ -256,6 +256,8 @@ Chat UI
 	•	[x] CRUD route handlers /api/admin/... для кожної сутності
 	•	[x] /admin: одна сторінка з секціями (Topics, Document Templates, Fields, Checks)
 	•	[x] /admin: кнопки «Reindex» і «Оновити тему» бʼють по `/api/knowledge/*` (без ручних файлів)
+	•	[x] Структурувати `responses` через textBlocks і дати UI для редагування
+	•	[x] Перетворити /admin на вкладки з пріоритетом «Теми»
 	•	[ ] Ручна перевірка: створити тестову тему і переконатися, що вона зберігається та підтягується у білдері знань
 
 Етап 3. Runtime API для агента
@@ -276,9 +278,13 @@ Chat UI
 Етап 5. Агентний рантайм і трейсинг
 	•	[ ] Замінити прямі виклики Responses API на Agents SDK (оркестрація тулів, observability)
 	•	[ ] Описати parse_files, run_checks, render_response, book_consultation як SDK tools
-	•	[ ] Налаштувати зберігання session_id на стороні OpenAI та прокинути його в UI
+	•	[ ] В UI зберігати і показувати поточний чат і повідомлення, а також кнопку почати чат заново
 	•	[ ] Переконатися, що Observability/Tracing показує всі кроки (AGENTS_TRACE=1)
 	•	[ ] Ручна перевірка: сценарії «Довіреність» і «Квартира» через агентний рантайм
+
+---
+Демо версія на цьому завершена. Наступний "Етап 6" поки що робити не треба.
+---
 
 Етап 6. Продакшн-флоу з USPICY CRM та OpenAI API
 	•	[ ] Винести чат-логіку в server-side endpoint, щоб UI стартера залишився внутрішнім інструментом розробки

@@ -42,6 +42,17 @@ type TopicDocumentRef = {
   required: boolean;
 };
 
+type TopicResponseBlock = {
+  kind: 'info' | 'checklist' | 'service' | 'script' | 'pricing';
+  title: string;
+  description?: string;
+  items: string[];
+};
+
+type TopicResponses = {
+  textBlocks: TopicResponseBlock[];
+};
+
 type TopicRecord = {
   id: string;
   title: string;
@@ -49,8 +60,15 @@ type TopicRecord = {
   faq: TopicFaq[];
   documents: TopicDocumentRef[];
   checkIds: string[];
-  responses?: Record<string, unknown> | null;
+  responses?: TopicResponses | null;
 };
+
+const ADMIN_TABS = [
+  { id: 'topics', label: 'Теми' },
+  { id: 'documentTemplates', label: 'Шаблони документів' },
+  { id: 'fields', label: 'Поля' },
+  { id: 'checks', label: 'Перевірки' },
+] as const;
 
 type FieldFormState = {
   key: string;
@@ -76,6 +94,13 @@ type CheckFormState = {
   onFail: string;
 };
 
+type TopicResponseBlockDraft = {
+  kind: TopicResponseBlock['kind'];
+  title: string;
+  description: string;
+  itemsText: string;
+};
+
 type TopicFormState = {
   title: string;
   tagsInput: string;
@@ -84,7 +109,8 @@ type TopicFormState = {
   documents: TopicDocumentRef[];
   documentDraft: TopicDocumentRef;
   checkIds: string[];
-  responsesText: string;
+  responses: TopicResponses;
+  responseBlockDraft: TopicResponseBlockDraft;
 };
 
 const createEmptyFieldForm = (): FieldFormState => ({
@@ -119,7 +145,13 @@ const createEmptyTopicForm = (): TopicFormState => ({
   documents: [],
   documentDraft: { templateId: '', alias: '', required: true },
   checkIds: [],
-  responsesText: '{\n  "missing_docs": [],\n  "analysis_ok": "",\n  "analysis_findings": []\n}',
+  responses: { textBlocks: [] },
+  responseBlockDraft: {
+    kind: 'info',
+    title: '',
+    description: '',
+    itemsText: '',
+  },
 });
 
 async function fetchJson<T>(input: RequestInfo, init?: RequestInit) {
@@ -173,6 +205,10 @@ export default function AdminPage() {
   );
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const [topicSubmitting, setTopicSubmitting] = useState(false);
+
+  const [activeTab, setActiveTab] = useState<
+    (typeof ADMIN_TABS)[number]['id']
+  >('topics');
 
   const [reindexing, setReindexing] = useState(false);
   const [updatingTopicId, setUpdatingTopicId] = useState<string | null>(null);
@@ -473,16 +509,6 @@ export default function AdminPage() {
     event.preventDefault();
     clearFeedback();
 
-    let responses: Record<string, unknown> | undefined;
-    if (topicForm.responsesText.trim()) {
-      try {
-        responses = JSON.parse(topicForm.responsesText);
-      } catch (error) {
-        showError(`Помилка парсингу responses: ${(error as Error).message}`);
-        return;
-      }
-    }
-
     const payload = {
       title: topicForm.title.trim(),
       tags: topicForm.tagsInput
@@ -496,7 +522,15 @@ export default function AdminPage() {
         required: doc.required,
       })),
       checkIds: topicForm.checkIds,
-      responses,
+      responses:
+        topicForm.responses.textBlocks.length > 0
+          ? {
+              textBlocks: topicForm.responses.textBlocks.map((block) => ({
+                ...block,
+                items: block.items.filter((item) => item.trim().length > 0),
+              })),
+            }
+          : undefined,
     };
 
     setTopicSubmitting(true);
@@ -537,9 +571,18 @@ export default function AdminPage() {
       documents: topic.documents || [],
       documentDraft: { templateId: '', alias: '', required: true },
       checkIds: topic.checkIds || [],
-      responsesText: topic.responses
-        ? JSON.stringify(topic.responses, null, 2)
-        : '',
+      responses: {
+        textBlocks: (topic.responses?.textBlocks ?? []).map((block) => ({
+          ...block,
+          items: [...(block.items ?? [])],
+        })),
+      },
+      responseBlockDraft: {
+        kind: 'info',
+        title: '',
+        description: '',
+        itemsText: '',
+      },
     });
   };
 
@@ -594,6 +637,78 @@ export default function AdminPage() {
       ...prev,
       documents: prev.documents.filter((_, idx) => idx !== index),
     }));
+  };
+
+  const addResponseBlock = () => {
+    clearFeedback();
+    const { title, itemsText, description, kind } = topicForm.responseBlockDraft;
+    if (!title.trim()) {
+      showError('Вкажіть назву блоку');
+      return;
+    }
+
+    const items = itemsText
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (items.length === 0) {
+      showError('Додайте хоча б один пункт для блоку');
+      return;
+    }
+
+    setTopicForm((prev) => ({
+      ...prev,
+      responses: {
+        textBlocks: [
+          ...prev.responses.textBlocks,
+          {
+            kind,
+            title: title.trim(),
+            description: description.trim() || undefined,
+            items,
+          },
+        ],
+      },
+      responseBlockDraft: {
+        kind: 'info',
+        title: '',
+        description: '',
+        itemsText: '',
+      },
+    }));
+  };
+
+  const removeResponseBlock = (index: number) => {
+    clearFeedback();
+    setTopicForm((prev) => ({
+      ...prev,
+      responses: {
+        textBlocks: prev.responses.textBlocks.filter((_, idx) => idx !== index),
+      },
+    }));
+  };
+
+  const editResponseBlock = (index: number) => {
+    clearFeedback();
+    setTopicForm((prev) => {
+      const block = prev.responses.textBlocks[index];
+      if (!block) {
+        return prev;
+      }
+      return {
+        ...prev,
+        responses: {
+          textBlocks: prev.responses.textBlocks.filter((_, idx) => idx !== index),
+        },
+        responseBlockDraft: {
+          kind: block.kind,
+          title: block.title,
+          description: block.description ?? '',
+          itemsText: Array.isArray(block.items) ? block.items.join('\n') : '',
+        },
+      };
+    });
   };
 
   const toggleTopicCheck = (checkId: string) => {
@@ -668,7 +783,28 @@ export default function AdminPage() {
         </div>
       )}
 
-      <section className="space-y-4 rounded-lg border bg-white p-6 shadow-sm">
+      <nav className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-4">
+        {ADMIN_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+              activeTab === tab.id
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      <section
+        className={`space-y-4 rounded-lg border bg-white p-6 shadow-sm ${
+          activeTab === 'fields' ? '' : 'hidden'
+        }`}
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Fields</h2>
           {editingFieldId && (
@@ -831,7 +967,11 @@ export default function AdminPage() {
         </form>
       </section>
 
-      <section className="space-y-4 rounded-lg border bg-white p-6 shadow-sm">
+      <section
+        className={`space-y-4 rounded-lg border bg-white p-6 shadow-sm ${
+          activeTab === 'documentTemplates' ? '' : 'hidden'
+        }`}
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Document Templates</h2>
           {editingTemplateId && (
@@ -936,7 +1076,11 @@ export default function AdminPage() {
         </form>
       </section>
 
-      <section className="space-y-4 rounded-lg border bg-white p-6 shadow-sm">
+      <section
+        className={`space-y-4 rounded-lg border bg-white p-6 shadow-sm ${
+          activeTab === 'checks' ? '' : 'hidden'
+        }`}
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Checks</h2>
           {editingCheckId && (
@@ -1120,7 +1264,11 @@ export default function AdminPage() {
         </form>
       </section>
 
-      <section className="space-y-4 rounded-lg border bg-white p-6 shadow-sm">
+      <section
+        className={`space-y-4 rounded-lg border bg-white p-6 shadow-sm ${
+          activeTab === 'topics' ? '' : 'hidden'
+        }`}
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Topics</h2>
           {editingTopicId && (
@@ -1417,18 +1565,151 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Responses (JSON)</label>
-            <textarea
-              value={topicForm.responsesText}
-              onChange={(event) =>
-                setTopicForm((prev) => ({
-                  ...prev,
-                  responsesText: event.target.value,
-                }))
-              }
-              className="h-40 w-full rounded-md border px-3 py-2 text-sm font-mono"
-            />
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Текстові блоки</h3>
+              <p className="text-xs text-muted-foreground">
+                Використовуйте для інструкцій, шаблонів, службових повідомлень
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {topicForm.responses.textBlocks.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Поки що немає блоків. Додайте перший нижче.
+                </p>
+              )}
+              {topicForm.responses.textBlocks.map((block, index) => (
+                <div
+                  key={`${block.title}-${index}`}
+                  className="space-y-2 rounded-md border px-3 py-3"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-blue-600">
+                          {block.kind}
+                        </span>
+                        <h4 className="text-sm font-semibold">{block.title}</h4>
+                      </div>
+                      {block.description && (
+                        <p className="mt-1 text-xs text-gray-600">
+                          {block.description}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => editResponseBlock(index)}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        Редагувати
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeResponseBlock(index)}
+                        className="text-xs text-red-600 hover:underline"
+                      >
+                        Видалити
+                      </button>
+                    </div>
+                  </div>
+                  <ul className="list-disc space-y-1 pl-5 text-xs text-gray-700">
+                    {block.items.map((item, itemIdx) => (
+                      <li key={itemIdx}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-2 rounded-md border px-3 py-3">
+              <div className="grid gap-2 md:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Тип</label>
+                  <select
+                    value={topicForm.responseBlockDraft.kind}
+                    onChange={(event) =>
+                      setTopicForm((prev) => ({
+                        ...prev,
+                        responseBlockDraft: {
+                          ...prev.responseBlockDraft,
+                          kind: event.target.value as TopicResponseBlock['kind'],
+                        },
+                      }))
+                    }
+                    className="w-full rounded-md border px-3 py-2 text-sm"
+                  >
+                    <option value="info">Інформація</option>
+                    <option value="checklist">Чекліст</option>
+                    <option value="service">Сервіс</option>
+                    <option value="script">Скрипт</option>
+                    <option value="pricing">Вартість</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Заголовок</label>
+                  <input
+                    value={topicForm.responseBlockDraft.title}
+                    onChange={(event) =>
+                      setTopicForm((prev) => ({
+                        ...prev,
+                        responseBlockDraft: {
+                          ...prev.responseBlockDraft,
+                          title: event.target.value,
+                        },
+                      }))
+                    }
+                    className="w-full rounded-md border px-3 py-2 text-sm"
+                    placeholder="Наприклад: Класичні відповіді"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Опис (необов’язково)</label>
+                <input
+                  value={topicForm.responseBlockDraft.description}
+                  onChange={(event) =>
+                    setTopicForm((prev) => ({
+                      ...prev,
+                      responseBlockDraft: {
+                        ...prev.responseBlockDraft,
+                        description: event.target.value,
+                      },
+                    }))
+                  }
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  placeholder="Коротке пояснення або контекст"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium">
+                  Пункти (по одному в рядку)
+                </label>
+                <textarea
+                  value={topicForm.responseBlockDraft.itemsText}
+                  onChange={(event) =>
+                    setTopicForm((prev) => ({
+                      ...prev,
+                      responseBlockDraft: {
+                        ...prev.responseBlockDraft,
+                        itemsText: event.target.value,
+                      },
+                    }))
+                  }
+                  className="h-32 w-full rounded-md border px-3 py-2 text-sm"
+                  placeholder={'Відповідь 1\nВідповідь 2'}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={addResponseBlock}
+                className="inline-flex items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700"
+              >
+                Додати блок
+              </button>
+            </div>
           </div>
 
           <button
