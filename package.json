@@ -26,7 +26,7 @@
     "lucide-react": "^0.441.0",
     "mongoose": "^8.18.2",
     "next": "^15.2.3",
-    "openai": "^4.87.3",
+    "openai": "^4.104.0",
     "openid-client": "^6.6.4",
     "partial-json": "^0.1.7",
     "react": "^18",
