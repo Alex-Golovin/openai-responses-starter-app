@@ -2525,7 +2525,7 @@ function AdminPageContent() {
                       >
                         {updatingTopicId === topic.id
                           ? 'Оновлення…'
-                          : 'Оновити тему у Vector Store'}
+                          : 'Оновити тему у Базі знань'}
                       </button>
                       <button
                         type="button"
