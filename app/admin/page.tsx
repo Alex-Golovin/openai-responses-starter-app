@@ -245,68 +245,6 @@ const createEmptyResponseBlockDraft = (): TopicResponseBlockDraft => ({
   itemsText: '',
 });
 
-const CYRILLIC_TO_LATIN_MAP: Record<string, string> = {
-  а: 'a',
-  б: 'b',
-  в: 'v',
-  г: 'h',
-  ґ: 'g',
-  д: 'd',
-  е: 'e',
-  є: 'ie',
-  ж: 'zh',
-  з: 'z',
-  и: 'y',
-  і: 'i',
-  ї: 'i',
-  й: 'i',
-  к: 'k',
-  л: 'l',
-  м: 'm',
-  н: 'n',
-  о: 'o',
-  п: 'p',
-  р: 'r',
-  с: 's',
-  т: 't',
-  у: 'u',
-  ф: 'f',
-  х: 'kh',
-  ц: 'ts',
-  ч: 'ch',
-  ш: 'sh',
-  щ: 'shch',
-  ь: '',
-  ю: 'iu',
-  я: 'ia',
-};
-
-const slugify = (input: string): string => {
-  const lower = input.trim().toLowerCase();
-  let result = '';
-  for (const char of lower) {
-    if (/[a-z0-9]/.test(char)) {
-      result += char;
-    } else if (CYRILLIC_TO_LATIN_MAP[char]) {
-      result += CYRILLIC_TO_LATIN_MAP[char];
-    } else if (char === ' ' || char === '-' || char === '_') {
-      result += '-';
-    }
-  }
-  result = result.replace(/-+/g, '-').replace(/^-|-$/g, '');
-  return result || 'item';
-};
-
-const makeUniqueSlug = (base: string, existing: Set<string>): string => {
-  let candidate = base;
-  let counter = 2;
-  while (existing.has(candidate)) {
-    candidate = `${base}-${counter}`;
-    counter += 1;
-  }
-  return candidate;
-};
-
 const createEmptyTopicForm = (): TopicFormState => ({
   title: '',
   tags: [],
@@ -631,28 +569,8 @@ function AdminPageContent() {
     event.preventDefault();
     clearFeedback();
 
-    const isEditing = Boolean(editingFieldId);
-
     if (!fieldForm.label.trim()) {
       showError('Вкажіть назву поля');
-      return;
-    }
-
-    const existingKeys = new Set(fields.map((field) => field.key));
-    if (isEditing && editingFieldId) {
-      const current = fields.find((field) => field.id === editingFieldId);
-      if (current) {
-        existingKeys.delete(current.key);
-      }
-    }
-
-    if (!fieldForm.key) {
-      showError('Не вдалося згенерувати ключ поля');
-      return;
-    }
-
-    if (existingKeys.has(fieldForm.key)) {
-      showError('Поле з таким ключем вже існує. Змініть назву.');
       return;
     }
 
@@ -661,7 +579,7 @@ function AdminPageContent() {
       const prepared = fieldForm.options
         .map((option) => ({
           label: option.label.trim(),
-          value: option.value,
+          value: option.value.trim(),
           isEditable: option.isEditable,
         }))
         .filter((option) => option.label.length > 0);
@@ -673,27 +591,34 @@ function AdminPageContent() {
 
       const valueSet = new Set<string>();
       for (const option of prepared) {
-        if (!option.value) {
-          showError('Не вдалося згенерувати ідентифікатор для варіанту');
-          return;
+        if (option.value) {
+          if (valueSet.has(option.value)) {
+            showError('Варіанти списку мають бути унікальними');
+            return;
+          }
+          valueSet.add(option.value);
         }
-        if (valueSet.has(option.value)) {
-          showError('Варіанти списку мають бути унікальними');
-          return;
-        }
-        valueSet.add(option.value);
       }
 
       optionsPayload = prepared.map(({ label, value }) => ({ label, value }));
     }
 
-    const payload = {
-      key: fieldForm.key.trim(),
+    const payload: {
+      key?: string;
+      label: string;
+      type: FieldRecord['type'];
+      options?: FieldOptionRecord[];
+      extractHint?: string;
+    } = {
       label: fieldForm.label.trim(),
       type: fieldForm.type,
       options: optionsPayload,
       extractHint: fieldForm.extractHint.trim() || undefined,
     };
+
+    if (fieldForm.key.trim()) {
+      payload.key = fieldForm.key.trim();
+    }
 
     setFieldSubmitting(true);
     try {
@@ -785,19 +710,10 @@ function AdminPageContent() {
         if (!option.isEditable) {
           return option;
         }
-
-        const baseSlug = slugify(trimmed);
-        const existingValues = new Set(
-          prev.options
-            .filter((_, optionIdx) => optionIdx !== index)
-            .map((opt) => opt.value)
-        );
-        const uniqueSlug = baseSlug ? makeUniqueSlug(baseSlug, existingValues) : '';
-
         return {
           ...option,
           label: trimmed,
-          value: uniqueSlug,
+          value: option.value,
         };
       }),
     }));
@@ -1629,18 +1545,10 @@ function AdminPageContent() {
               value={fieldForm.label}
               onChange={(event) => {
                 const nextLabel = event.target.value;
-                setFieldForm((prev) => {
-                  const nextState = { ...prev, label: nextLabel };
-                  if (!editingFieldId) {
-                    const baseSlug = slugify(nextLabel);
-                    const existingKeys = new Set(fields.map((field) => field.key));
-                    const uniqueSlug = baseSlug
-                      ? makeUniqueSlug(baseSlug, existingKeys)
-                      : '';
-                    nextState.key = uniqueSlug;
-                  }
-                  return nextState;
-                });
+                setFieldForm((prev) => ({
+                  ...prev,
+                  label: nextLabel,
+                }));
               }}
               disabled={Boolean(editingFieldId)}
               className="w-full rounded-md border px-3 py-2 text-sm disabled:bg-gray-100"
@@ -2705,7 +2613,9 @@ function AdminPageContent() {
                         <div>
                           <p className="font-medium">{templateName || doc.templateId}</p>
                           <p className="text-xs text-muted-foreground">
-                            Alias: {doc.alias} · {doc.required ? 'обовʼязково' : 'необовʼязково'}
+                            Alias:{' '}
+                            {doc.alias || 'зʼявиться після збереження'} ·{' '}
+                            {doc.required ? 'обовʼязково' : 'необовʼязково'}
                           </p>
                         </div>
                         <button
@@ -2732,12 +2642,7 @@ function AdminPageContent() {
                         documentDraft: {
                           ...prev.documentDraft,
                           templateId: event.target.value,
-                          alias: (() => {
-                            const selected = templates.find((t) => t.id === event.target.value);
-                            const base = selected ? slugify(selected.name) : '';
-                            const existing = new Set(prev.documents.map((d) => d.alias));
-                            return base ? makeUniqueSlug(base, existing) : prev.documentDraft.alias;
-                          })(),
+                          alias: '',
                         },
                       }))
                     }
@@ -2754,9 +2659,11 @@ function AdminPageContent() {
                 <div className="space-y-1">
                   <label className="text-xs font-medium">Системний alias</label>
                   <div className="rounded-md bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700">
-                    {topicForm.documentDraft.alias || '—'}
+                    {topicForm.documentDraft.alias || 'зʼявиться після збереження'}
                   </div>
-                  <p className="text-[11px] text-muted-foreground">Alias генерується автоматично з назви шаблону</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Alias генерується на сервері після збереження теми.
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <input

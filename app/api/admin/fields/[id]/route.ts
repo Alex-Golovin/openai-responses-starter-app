@@ -3,6 +3,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongoose';
 import { Field } from '@/models/Field';
 import { serializeDocument } from '@/app/api/admin/utils';
+import { makeSlug } from '@/lib/slug';
+import {
+  ensureUniqueFieldKey,
+  normalizeEnumOptions,
+  sanitizeExtractHint,
+  sanitizeLabel,
+} from '@/app/api/admin/fields/utils';
 
 type RouteContext = {
   params: Promise<{ id: string | string[] | undefined }>;
@@ -20,14 +27,51 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Field id is required' }, { status: 400 });
     }
 
-    const field = await Field.findByIdAndUpdate(id, payload, {
-      new: true,
-      runValidators: true,
-    });
+    const field = await Field.findById(id);
 
     if (!field) {
       return NextResponse.json({ error: 'Field not found' }, { status: 404 });
     }
+
+    if (payload.label !== undefined) {
+      const nextLabel = sanitizeLabel(payload.label);
+      if (!nextLabel) {
+        return NextResponse.json({ error: 'Вкажіть назву поля' }, { status: 400 });
+      }
+      field.label = nextLabel;
+    }
+
+    const requestedType = payload.type ?? field.type;
+    field.type = requestedType;
+
+    if (payload.key !== undefined) {
+      const keySource = sanitizeLabel(payload.key);
+      if (!keySource) {
+        return NextResponse.json(
+          { error: 'Ключ поля не може бути порожнім' },
+          { status: 400 }
+        );
+      }
+      const uniqueKey = await ensureUniqueFieldKey(
+        makeSlug(keySource, { fallback: 'field' }),
+        field.id.toString()
+      );
+      field.key = uniqueKey;
+    }
+
+    if (requestedType === 'enum') {
+      const rawOptions =
+        payload.options !== undefined ? payload.options : field.options;
+      field.options = normalizeEnumOptions(rawOptions);
+    } else {
+      field.options = undefined;
+    }
+
+    if (payload.extractHint !== undefined) {
+      field.extractHint = sanitizeExtractHint(payload.extractHint);
+    }
+
+    await field.save();
 
     return NextResponse.json(serializeDocument(field.toObject()));
   } catch (error) {

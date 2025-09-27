@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongoose';
 import { Topic } from '@/models/Topic';
 import { serializeDocument } from '@/app/api/admin/utils';
+import { normalizeTopicDocuments } from '@/app/api/admin/topics/utils';
 
 type RouteContext = {
   params: Promise<{ id: string | string[] | undefined }>;
@@ -20,7 +21,13 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Topic id is required' }, { status: 400 });
     }
 
-    const topic = await Topic.findByIdAndUpdate(id, payload, {
+    const updateData = { ...payload };
+
+    if (Object.prototype.hasOwnProperty.call(payload, 'documents')) {
+      updateData.documents = await normalizeTopicDocuments(payload.documents);
+    }
+
+    const topic = await Topic.findByIdAndUpdate(id, updateData, {
       new: true,
       runValidators: true,
     });

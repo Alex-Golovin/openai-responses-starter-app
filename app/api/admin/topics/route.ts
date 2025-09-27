@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongoose';
 import { Topic } from '@/models/Topic';
 import { serializeDocument } from '@/app/api/admin/utils';
+import { normalizeTopicDocuments } from '@/app/api/admin/topics/utils';
 
 export async function GET() {
   await connectToDatabase();
@@ -14,7 +15,11 @@ export async function POST(request: NextRequest) {
   try {
     await connectToDatabase();
     const payload = await request.json();
-    const topic = await Topic.create(payload);
+    const documents = await normalizeTopicDocuments(payload.documents);
+    const topic = await Topic.create({
+      ...payload,
+      documents,
+    });
     return NextResponse.json(serializeDocument(topic.toObject()));
   } catch (error) {
     console.error('Failed to create topic', error);
