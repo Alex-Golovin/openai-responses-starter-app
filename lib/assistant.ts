@@ -74,6 +74,7 @@ export type Item =
 export const handleTurn = async (
   messages: any[],
   toolsState: ToolsState,
+  previousResponseId: string | null,
   onMessage: (data: any) => void
 ) => {
   try {
@@ -86,6 +87,7 @@ export const handleTurn = async (
         messages: messages,
         toolsState: toolsState,
         googleIntegrationEnabled,
+        previousResponseId,
       }),
     });
 
@@ -142,11 +144,22 @@ export const processMessages = async () => {
     setChatMessages,
     setConversationItems,
     setAssistantLoading,
+    lastResponseId,
+    setLastResponseId,
   } = useConversationStore.getState();
 
   const toolsState = useToolsStore.getState() as ToolsState;
 
-  const allConversationItems = conversationItems;
+  const pendingConversationItems = conversationItems.slice();
+  // Clear queue before dispatching the request. New items (e.g. tool outputs) will
+  // be queued as the stream progresses.
+  setConversationItems([]);
+  let queuedItems: any[] = [];
+
+  if (pendingConversationItems.length === 0) {
+    setAssistantLoading(false);
+    return;
+  }
 
   let assistantMessageContent = "";
   let functionArguments = "";
@@ -154,10 +167,18 @@ export const processMessages = async () => {
   let mcpArguments = "";
 
   await handleTurn(
-    allConversationItems,
+    pendingConversationItems,
     toolsState,
+    lastResponseId,
     async ({ event, data }) => {
       switch (event) {
+        case "response.created": {
+          const { response } = data;
+          if (response && response.id) {
+            setLastResponseId(response.id);
+          }
+          break;
+        }
         case "response.output_text.delta":
         case "response.output_text.annotation.added": {
           const { delta, item_id, annotation } = data;
@@ -229,18 +250,7 @@ export const processMessages = async () => {
                   },
                 ],
               });
-              conversationItems.push({
-                role: "assistant",
-                content: [
-                  {
-                    type: "output_text",
-                    text,
-                    ...(annotations.length > 0 ? { annotations } : {}),
-                  },
-                ],
-              });
               setChatMessages([...chatMessages]);
-              setConversationItems([...conversationItems]);
               break;
             }
             case "function_call": {
@@ -317,8 +327,6 @@ export const processMessages = async () => {
             toolCallMessage.call_id = item.call_id;
             setChatMessages([...chatMessages]);
           }
-          conversationItems.push(item);
-          setConversationItems([...conversationItems]);
           if (
             toolCallMessage &&
             toolCallMessage.type === "tool_call" &&
@@ -333,13 +341,13 @@ export const processMessages = async () => {
             // Record tool output
             toolCallMessage.output = JSON.stringify(toolResult);
             setChatMessages([...chatMessages]);
-            conversationItems.push({
+            queuedItems.push({
               type: "function_call_output",
               call_id: toolCallMessage.call_id,
               status: "completed",
               output: JSON.stringify(toolResult),
             });
-            setConversationItems([...conversationItems]);
+            setConversationItems([...queuedItems]);
 
             // Create another turn after tool output has been added
             await processMessages();
@@ -508,6 +516,13 @@ export const processMessages = async () => {
         case "response.completed": {
           console.log("response completed", data);
           const { response } = data;
+          if (response && response.id) {
+            setLastResponseId(response.id);
+          }
+          // Ensure any queued items are reflected in state after the run completes
+          if (queuedItems.length > 0) {
+            setConversationItems([...queuedItems]);
+          }
 
           // Handle MCP tools list (append all lists, not just the first)
           const mcpListToolsMessages = response.output.filter(

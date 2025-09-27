@@ -4,7 +4,7 @@ import OpenAI from "openai";
 
 export async function POST(request: Request) {
   try {
-    const { messages, toolsState } = await request.json();
+    const { messages, toolsState, previousResponseId } = await request.json();
 
     const tools = await getTools(toolsState);
 
@@ -21,6 +21,7 @@ export async function POST(request: Request) {
       tools,
       stream: true,
       parallel_tool_calls: false,
+      ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
     });
 
     // Create a ReadableStream that emits SSE data
