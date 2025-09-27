@@ -238,6 +238,13 @@ const createEmptyRuleDraft = (): CheckRuleDraft => ({
   message: '',
 });
 
+const createEmptyResponseBlockDraft = (): TopicResponseBlockDraft => ({
+  kind: 'info',
+  title: '',
+  description: '',
+  itemsText: '',
+});
+
 const CYRILLIC_TO_LATIN_MAP: Record<string, string> = {
   а: 'a',
   б: 'b',
@@ -310,12 +317,7 @@ const createEmptyTopicForm = (): TopicFormState => ({
   documentDraft: { templateId: '', alias: '', required: true },
   checkIds: [],
   responses: { textBlocks: [] },
-  responseBlockDraft: {
-    kind: 'info',
-    title: '',
-    description: '',
-    itemsText: '',
-  },
+  responseBlockDraft: createEmptyResponseBlockDraft(),
 });
 
 async function fetchJson<T>(input: RequestInfo, init?: RequestInit) {
@@ -377,6 +379,10 @@ function AdminPageContent() {
   const [faqDraftVisible, setFaqDraftVisible] = useState(false);
   const [documentDraftVisible, setDocumentDraftVisible] = useState(false);
   const [responseDraftVisible, setResponseDraftVisible] = useState(false);
+  const [editingResponseBlockIndex, setEditingResponseBlockIndex] =
+    useState<number | null>(null);
+  const [responseBlockTitleError, setResponseBlockTitleError] =
+    useState(false);
 
   const [activeTab, setActiveTab] = useState<
     (typeof ADMIN_TABS)[number]['id']
@@ -433,6 +439,9 @@ function AdminPageContent() {
   const resetTopicFormState = () => {
     setTopicForm(createEmptyTopicForm());
     setEditingTopicId(null);
+    setResponseDraftVisible(false);
+    setEditingResponseBlockIndex(null);
+    setResponseBlockTitleError(false);
   };
 
   const loadFields = async () => {
@@ -732,6 +741,14 @@ function AdminPageContent() {
   };
 
   const handleFieldDelete = async (id: string) => {
+    const field = fields.find((item) => item.id === id);
+    const fieldName = field?.label || field?.key || 'це поле';
+    const confirmed = window.confirm(
+      `Ви впевнені, що хочете видалити поле «${fieldName}»?`
+    );
+    if (!confirmed) {
+      return;
+    }
     clearFeedback();
     try {
       await fetchJson(`/api/admin/fields/${id}`, { method: 'DELETE' });
@@ -911,6 +928,14 @@ function AdminPageContent() {
   };
 
   const handleTemplateDelete = async (id: string) => {
+    const template = templates.find((item) => item.id === id);
+    const templateName = template?.name || 'цей шаблон';
+    const confirmed = window.confirm(
+      `Ви впевнені, що хочете видалити шаблон «${templateName}»?`
+    );
+    if (!confirmed) {
+      return;
+    }
     clearFeedback();
     try {
       await fetchJson(`/api/admin/document-templates/${id}`, {
@@ -1035,6 +1060,14 @@ function AdminPageContent() {
   };
 
   const handleCheckDelete = async (id: string) => {
+    const check = checks.find((item) => item.id === id);
+    const checkName = check?.description || 'цю перевірку';
+    const confirmed = window.confirm(
+      `Ви впевнені, що хочете видалити перевірку «${checkName}»?`
+    );
+    if (!confirmed) {
+      return;
+    }
     clearFeedback();
     try {
       await fetchJson(`/api/admin/checks/${id}`, {
@@ -1103,6 +1136,9 @@ function AdminPageContent() {
     clearFeedback();
     setEditingTopicId(topic.id);
     setTopicFormVisible(true);
+    setResponseDraftVisible(false);
+    setEditingResponseBlockIndex(null);
+    setResponseBlockTitleError(false);
     setTopicForm({
       title: topic.title,
       tags: [...(topic.tags || [])],
@@ -1118,16 +1154,19 @@ function AdminPageContent() {
           items: [...(block.items ?? [])],
         })),
       },
-      responseBlockDraft: {
-        kind: 'info',
-        title: '',
-        description: '',
-        itemsText: '',
-      },
+      responseBlockDraft: createEmptyResponseBlockDraft(),
     });
   };
 
   const handleTopicDelete = async (id: string) => {
+    const topic = topics.find((item) => item.id === id);
+    const topicTitle = topic?.title || 'цю тему';
+    const confirmed = window.confirm(
+      `Ви впевнені, що хочете видалити тему «${topicTitle}»?`
+    );
+    if (!confirmed) {
+      return;
+    }
     clearFeedback();
     try {
       await fetchJson(`/api/admin/topics/${id}`, { method: 'DELETE' });
@@ -1267,8 +1306,10 @@ function AdminPageContent() {
 
   const addResponseBlock = () => {
     clearFeedback();
+    setResponseBlockTitleError(false);
     const { title, itemsText, description, kind } = topicForm.responseBlockDraft;
     if (!title.trim()) {
+      setResponseBlockTitleError(true);
       showError('Вкажіть назву блоку');
       return;
     }
@@ -1283,26 +1324,35 @@ function AdminPageContent() {
       return;
     }
 
-    setTopicForm((prev) => ({
-      ...prev,
-      responses: {
-        textBlocks: [
-          ...prev.responses.textBlocks,
-          {
-            kind,
-            title: title.trim(),
-            description: description.trim() || undefined,
-            items,
-          },
-        ],
-      },
-      responseBlockDraft: {
-        kind: 'info',
-        title: '',
-        description: '',
-        itemsText: '',
-      },
-    }));
+    const payload: TopicResponseBlock = {
+      kind,
+      title: title.trim(),
+      description: description.trim() || undefined,
+      items,
+    };
+
+    setTopicForm((prev) => {
+      const nextBlocks = [...prev.responses.textBlocks];
+      if (
+        editingResponseBlockIndex !== null &&
+        editingResponseBlockIndex >= 0 &&
+        editingResponseBlockIndex < nextBlocks.length
+      ) {
+        nextBlocks.splice(editingResponseBlockIndex, 1, payload);
+      } else {
+        nextBlocks.push(payload);
+      }
+
+      return {
+        ...prev,
+        responses: {
+          textBlocks: nextBlocks,
+        },
+        responseBlockDraft: createEmptyResponseBlockDraft(),
+      };
+    });
+    setEditingResponseBlockIndex(null);
+    setResponseBlockTitleError(false);
   };
 
   const removeResponseBlock = (index: number) => {
@@ -1312,11 +1362,28 @@ function AdminPageContent() {
       responses: {
         textBlocks: prev.responses.textBlocks.filter((_, idx) => idx !== index),
       },
+      responseBlockDraft:
+        editingResponseBlockIndex === index
+          ? createEmptyResponseBlockDraft()
+          : prev.responseBlockDraft,
     }));
+
+    if (editingResponseBlockIndex !== null) {
+      if (editingResponseBlockIndex === index) {
+        setEditingResponseBlockIndex(null);
+        setResponseDraftVisible(false);
+        setResponseBlockTitleError(false);
+      } else if (editingResponseBlockIndex > index) {
+        setEditingResponseBlockIndex(editingResponseBlockIndex - 1);
+      }
+    }
   };
 
   const editResponseBlock = (index: number) => {
     clearFeedback();
+    setResponseDraftVisible(true);
+    setEditingResponseBlockIndex(index);
+    setResponseBlockTitleError(false);
     setTopicForm((prev) => {
       const block = prev.responses.textBlocks[index];
       if (!block) {
@@ -1324,9 +1391,6 @@ function AdminPageContent() {
       }
       return {
         ...prev,
-        responses: {
-          textBlocks: prev.responses.textBlocks.filter((_, idx) => idx !== index),
-        },
         responseBlockDraft: {
           kind: block.kind,
           title: block.title,
@@ -1335,6 +1399,20 @@ function AdminPageContent() {
         },
       };
     });
+  };
+
+  const toggleResponseDraftForm = () => {
+    if (responseDraftVisible) {
+      setResponseDraftVisible(false);
+      setEditingResponseBlockIndex(null);
+      setResponseBlockTitleError(false);
+      setTopicForm((prev) => ({
+        ...prev,
+        responseBlockDraft: createEmptyResponseBlockDraft(),
+      }));
+    } else {
+      setResponseDraftVisible(true);
+    }
   };
 
   const toggleTopicCheck = (checkId: string) => {
@@ -2814,15 +2892,19 @@ function AdminPageContent() {
             <div className="flex items-center justify-end">
               <button
                 type="button"
-                onClick={() => setResponseDraftVisible((v) => !v)}
+                onClick={toggleResponseDraftForm}
                 className="text-xs text-blue-600 hover:underline"
               >
-                {responseDraftVisible ? 'Приховати форму' : '＋ Додати блок'}
+                {editingResponseBlockIndex !== null
+                  ? 'Скасувати редагування'
+                  : responseDraftVisible
+                  ? 'Приховати форму'
+                  : '＋ Додати блок'}
               </button>
             </div>
             {responseDraftVisible && (
             <div className="space-y-2 rounded-md border px-3 py-3">
-              <div className="grid gap-2 md:grid-cols-2">
+              <div className="space-y-2">
                 <div className="space-y-1">
                   <label className="text-xs font-medium">Тип</label>
                   <select
@@ -2849,18 +2931,33 @@ function AdminPageContent() {
                   <label className="text-xs font-medium">Заголовок</label>
                   <input
                     value={topicForm.responseBlockDraft.title}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      if (responseBlockTitleError && nextValue.trim()) {
+                        setResponseBlockTitleError(false);
+                      }
                       setTopicForm((prev) => ({
                         ...prev,
                         responseBlockDraft: {
                           ...prev.responseBlockDraft,
-                          title: event.target.value,
+                          title: nextValue,
                         },
-                      }))
-                    }
-                    className="w-full rounded-md border px-3 py-2 text-sm"
+                      }));
+                    }}
+                    className={`w-full rounded-md border px-3 py-2 text-sm ${
+                      responseBlockTitleError
+                        ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-200'
+                        : ''
+                    }`}
                     placeholder="Наприклад: Класичні відповіді"
+                    aria-invalid={responseBlockTitleError ? 'true' : 'false'}
+                    required={responseDraftVisible}
                   />
+                  {responseBlockTitleError && (
+                    <p className="text-[11px] text-red-600">
+                      Додайте заголовок, щоб зберегти блок.
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="space-y-1">
@@ -2904,7 +3001,7 @@ function AdminPageContent() {
                 onClick={addResponseBlock}
                 className="inline-flex items-center justify-center rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700"
               >
-                Додати блок
+                {editingResponseBlockIndex !== null ? 'Зберегти блок' : 'Додати блок'}
               </button>
             </div>
             )}
