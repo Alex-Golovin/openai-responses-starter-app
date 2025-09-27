@@ -2918,7 +2918,7 @@ function AdminPageContent() {
             {topicSubmitting
               ? 'Збереження…'
               : editingTopicId
-              ? 'Оновити тему'
+              ? 'Зберегти тему'
               : 'Створити тему'}
           </button>
           </form>

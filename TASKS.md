@@ -269,6 +269,7 @@ Chat UI
 	•	[ ] Ручна перевірка: створити тестову тему і переконатися, що вона зберігається та підтягується у білдері знань
 
 Етап 3. Runtime API для агента
+	•	[ ] Перейти на agents sdk и использовать traces, т.к. сейчас не показывается в OpenAI dashboard результаты использования инструментов
 	•	[ ] /api/runtime/choose-topic — підрахунок домінуючого topicId з File Search (k=5)
 	•	[ ] /api/runtime/parse-files — Responses structured outputs → { fieldKey, value }
 	•	[ ] /api/runtime/run-checks — мінімальний двигун правил
