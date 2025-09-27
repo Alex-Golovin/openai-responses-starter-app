@@ -2656,15 +2656,6 @@ function AdminPageContent() {
                     ))}
                   </select>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Системний alias</label>
-                  <div className="rounded-md bg-gray-50 px-3 py-2 font-mono text-xs text-gray-700">
-                    {topicForm.documentDraft.alias || 'зʼявиться після збереження'}
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Alias генерується на сервері після збереження теми.
-                  </p>
-                </div>
                 <div className="flex items-center gap-2">
                   <input
                     id="document-required-draft"
@@ -2914,17 +2905,31 @@ function AdminPageContent() {
             )}
           </div>
 
-          <button
-            type="submit"
-            disabled={topicSubmitting}
-            className="inline-flex items-center justify-center rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {topicSubmitting
-              ? 'Збереження…'
-              : editingTopicId
-              ? 'Зберегти тему'
-              : 'Створити тему'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="submit"
+              disabled={topicSubmitting}
+              className="inline-flex items-center justify-center rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {topicSubmitting
+                ? 'Збереження…'
+                : editingTopicId
+                ? 'Зберегти тему'
+                : 'Створити тему'}
+            </button>
+            {editingTopicId && (
+              <button
+                type="button"
+                onClick={() => {
+                  resetTopicFormState();
+                  setTopicFormVisible(false);
+                }}
+                className="inline-flex items-center justify-center rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+              >
+                Скасувати редагування
+              </button>
+            )}
+          </div>
           </form>
         )}
       </section>
